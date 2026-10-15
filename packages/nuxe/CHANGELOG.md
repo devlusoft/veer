@@ -1,5 +1,11 @@
 # nuxe
 
+## 0.9.17
+
+### Patch Changes
+
+- 67505f2: Fix scroll being skipped when a page resolves before the router applies `scrollBehavior`. `app.vue` renders pages with `NuxePage`.
+
 ## 0.9.16
 
 ### Patch Changes
