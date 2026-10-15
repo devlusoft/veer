@@ -1,5 +1,11 @@
 # nuxe
 
+## 0.10.0
+
+### Minor Changes
+
+- 257889e: `useAsyncData` can be awaited in `setup` so page suspense waits until the handler finishes
+
 ## 0.9.17
 
 ### Patch Changes
