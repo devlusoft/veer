@@ -1,4 +1,8 @@
-# create-nuxe
+# create-veer
+
+---
+
+Versiones anteriores publicadas como `create-nuxe`.
 
 ## 0.2.6
 

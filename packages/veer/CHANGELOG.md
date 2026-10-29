@@ -1,4 +1,8 @@
-# nuxe
+# @devlusoft/veer
+
+---
+
+Versiones anteriores publicadas como `@dvlkit/nuxe`.
 
 ## 0.10.0
 
