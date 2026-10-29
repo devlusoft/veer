@@ -1,5 +1,11 @@
 # create-veer
 
+## 0.1.0
+
+### Minor Changes
+
+- a5a066c: rename to veer
+
 ---
 
 Versiones anteriores publicadas como `create-nuxe`.
