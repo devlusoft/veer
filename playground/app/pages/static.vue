@@ -1,12 +1,12 @@
 <script setup>
-import { useHead } from '@dvlkit/nuxe'
+import { useHead } from '@devlusoft/veer'
 
 definePage({
   routeRules: { prerender: true },
 })
 
 useHead({
-  title: 'Static | nuxe',
+  title: 'Static | veer',
 })
 </script>
 

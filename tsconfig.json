@@ -2,7 +2,7 @@
   "files": [],
   "references": [
     {
-      "path": "./packages/nuxe"
+      "path": "./packages/veer"
     },
     {
       "path": "./playground"

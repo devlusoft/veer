@@ -1,4 +1,4 @@
-# nuxe
+# veer
 
 > Meta-framework de Vue para apps con SSR y file-based routing
 
@@ -16,8 +16,8 @@ Una capa de convenciones opinionadas sobre Vue 3, Vite y vue-router: file-based 
 ## Quick start
 
 ```bash
-git clone https://github.com/dvlkit/nuxe
-cd nuxe
+git clone https://github.com/devlusoft/veer
+cd veer
 pnpm install
 pnpm dev
 ```
@@ -42,10 +42,10 @@ my-app/
 |-- shared/
 |   |-- utils/             # Auto-imported en app y server
 |   └─- types/             # Auto-imported en app y server
-└── nuxe.config.ts         # Framework config (opcional)
+└── veer.config.ts         # Framework config (opcional)
 ```
 
-Solo esos directorios. `app.vue` muestra las páginas con `<NuxePage>`. `<RouterLink>` puede usarse para los enlaces. `<RouterView>` por sí solo no está soportado.
+Solo esos directorios. `app.vue` muestra las páginas con `<VeerPage>`. `<RouterLink>` puede usarse para los enlaces. `<RouterView>` por sí solo no está soportado.
 
 ## Layouts
 
@@ -85,7 +85,7 @@ Composable useHead para <title> y <meta> por página:
 ```vue
 <!-- pages/about.vue -->                                                                                                                                                                                                             
 <script setup lang="ts">
-import { useHead } from '@dvlkit/nuxe'
+import { useHead } from '@devlusoft/veer'
 
 useHead({
  title: 'About — my-app',
@@ -104,11 +104,11 @@ Funciona en SSR (los tags se inyectan en el HTML inicial) y client (se actualiza
 
 ## Datos asíncronos
 
-`useAsyncData` carga datos desde `setup` y devuelve refs (`data`, `pending`, `error`, `status`) más `refresh`. El valor también se puede esperar: con `await` en `setup`, el `Suspense` de `NuxePage` no emite `page:loading:end` hasta que termina el handler.
+`useAsyncData` carga datos desde `setup` y devuelve refs (`data`, `pending`, `error`, `status`) más `refresh`. El valor también se puede esperar: con `await` en `setup`, el `Suspense` de `VeerPage` no emite `page:loading:end` hasta que termina el handler.
 
 ```vue
 <script setup lang="ts">
-import { useAsyncData } from '@dvlkit/nuxe'
+import { useAsyncData } from '@devlusoft/veer'
 
 const { data } = await useAsyncData('post', async () => {
   return { title: 'Hola' }
@@ -124,10 +124,10 @@ Si la key ya está en caché o llega hidratada, el `await` resuelve sin volver a
 
 ## Config
 
-Crea nuxe.config.ts solo si necesitas customizar:
+Crea veer.config.ts solo si necesitas customizar:
 
 ```ts
-import { defineConfig } from '@dvlkit/nuxe'
+import { defineConfig } from '@devlusoft/veer'
 
 export default defineConfig({
   port: 4000,  // default: 300
@@ -141,9 +141,9 @@ export default defineConfig({
 
 | Comando         | Descripción                                       |
 |-----------------|---------------------------------------------------|
-| nuxe dev        | Dev server con SSR + HMR en http://localhost:3000 |
-| nuxe build      | Build de producción (dist/client/ + dist/server/) |
-| nuxe start      | Sirve el build de producción                      |
-| nuxe --version  | Versión del framework                             |
+| veer dev        | Dev server con SSR + HMR en http://localhost:3000 |
+| veer build      | Build de producción (dist/client/ + dist/server/) |
+| veer start      | Sirve el build de producción                      |
+| veer --version  | Versión del framework                             |
 
 Variables de entorno: PORT (default 3000), NODE_ENV.

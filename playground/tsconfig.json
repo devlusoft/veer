@@ -7,9 +7,9 @@
     }
   },
   "include": [
-    ".nuxe/**/*.d.ts",
+    ".veer/**/*.d.ts",
     "app/**/*.vue",
     "app/**/*.ts",
-    "nuxe.config.ts"
+    "veer.config.ts"
   ]
 }

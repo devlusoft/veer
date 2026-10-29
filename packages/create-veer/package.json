@@ -1,0 +1,32 @@
+{
+  "name": "create-veer",
+  "version": "0.2.6",
+  "description": "Scaffold a new veer project",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devlusoft/veer.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "bin": {
+    "create-veer": "./bin/index.js"
+  },
+  "files": [
+    "bin",
+    "lib/template"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "devDependencies": {
+    "tsup": "8.5.1",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.6.0"
+  }
+}

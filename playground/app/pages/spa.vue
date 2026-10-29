@@ -4,7 +4,7 @@ definePage({
 })
 
 useHead({
-  title: 'SPA Mode | nuxe',
+  title: 'SPA Mode | veer',
 })
 
 const counter = ref(0)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useHead } from '@dvlkit/nuxe'
-import type { NuxtError } from '@dvlkit/nuxe'
+import { useHead } from '@devlusoft/veer'
+import type { NuxtError } from '@devlusoft/veer'
 
 const props = defineProps<{
   error: NuxtError

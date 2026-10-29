@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useFetch, useHead } from '@dvlkit/nuxe'
+import { useFetch, useHead } from '@devlusoft/veer'
 import { formatTime } from '#shared/format'
 
 definePage({
@@ -8,7 +8,7 @@ definePage({
 })
 
 useHead({
-  title: 'Fetch Demo | nuxe',
+  title: 'Fetch Demo | veer',
   meta: [
     { name: 'description', content: 'Demonstrates useFetch with $fetch (built on ofetch) for reactive data fetching' },
   ],
