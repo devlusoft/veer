@@ -72,7 +72,7 @@ const candidatePaths = (() => {
       join(here, '..', '..', 'package.json'),
       join(here, '..', 'package.json'),
       join(here, 'package.json'),
-      join(process.cwd(), 'node_modules', '@dvlkit', 'veer', 'package.json'),
+      join(process.cwd(), 'node_modules', '@devlusoft', 'veer', 'package.json'),
     ]
   } catch {
     return []
