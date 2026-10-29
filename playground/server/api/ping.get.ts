@@ -1,4 +1,4 @@
-import { defineEventHandler, getQuery, setResponseStatus } from '@dvlkit/nuxe/server'
+import { defineEventHandler, getQuery, setResponseStatus } from '@devlusoft/veer/server'
 
 export default defineEventHandler(async (event): Promise<PingResponse> => {
   const query = getQuery(event)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useAsyncData } from '@dvlkit/nuxe'
+import { useAsyncData } from '@devlusoft/veer'
 
 definePage({ meta: { layout: 'default' } })
 

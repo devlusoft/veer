@@ -1,4 +1,4 @@
-import { defineEventHandler } from '@dvlkit/nuxe/server'
+import { defineEventHandler } from '@devlusoft/veer/server'
 
 export default defineEventHandler((_) => {
   return {

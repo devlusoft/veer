@@ -1,0 +1,6 @@
+node_modules
+dist
+.idea
+.DS_Store
+.veer
+typed-router.d.ts

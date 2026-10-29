@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { useHead } from '@dvlkit/nuxe'
-import { NuxeLoadingIndicator } from '@dvlkit/nuxe'
+import { useHead } from '@devlusoft/veer'
+import { VeerLoadingIndicator } from '@devlusoft/veer'
 import './assets/main.css'
-import { NuxePage } from '@dvlkit/nuxe'
+import { VeerPage } from '@devlusoft/veer'
 
 useHead({
-  title: 'nuxe playground',
+  title: 'veer playground',
 })
 
 const links = [
@@ -20,7 +20,7 @@ const links = [
 
 <template>
   <div class="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-    <NuxeLoadingIndicator/>
+    <VeerLoadingIndicator/>
     <nav class="flex flex-wrap gap-2 bg-slate-100 p-4 dark:bg-slate-900">
       <RouterLink
           v-for="link in links"
@@ -32,8 +32,8 @@ const links = [
         {{ link.label }}
       </RouterLink>
     </nav>
-    <NuxeLayout>
-      <NuxePage/>
-    </NuxeLayout>
+    <VeerLayout>
+      <VeerPage/>
+    </VeerLayout>
   </div>
 </template>

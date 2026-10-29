@@ -28,7 +28,7 @@ html, body, #app {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-.nuxe-link {
+.veer-link {
   display: inline-block;
   padding: 0.5rem 1rem;
   border-radius: var(--radius);
@@ -38,13 +38,13 @@ html, body, #app {
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.nuxe-link:hover {
+.veer-link:hover {
   background: var(--color-accent);
   color: var(--color-accent-fg);
 }
 
-.nuxe-link.router-link-active,
-.nuxe-link.router-link-exact-active {
+.veer-link.router-link-active,
+.veer-link.router-link-exact-active {
   background: var(--color-accent);
   color: var(--color-accent-fg);
 }

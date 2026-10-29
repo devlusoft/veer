@@ -1,0 +1,274 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+
+describe('nitro-log-request plugin', () => {
+  let originalLog: typeof console.log
+  let logged: string[]
+  let savedEnv: Record<string, string | undefined>
+
+  beforeEach(() => {
+    originalLog = console.log
+    logged = []
+    console.log = (...args: unknown[]) => {
+      logged.push(args.map(String).join(' '))
+    }
+    
+    savedEnv = {
+      VEER_SILENT: process.env.VEER_SILENT,
+      CI: process.env.CI,
+      VITEST: process.env.VITEST,
+      NODE_ENV: process.env.NODE_ENV,
+      VEER_API_PREFIX: process.env.VEER_API_PREFIX,
+    }
+    delete process.env.VEER_SILENT
+    delete process.env.CI
+    delete process.env.VITEST
+    delete process.env.NODE_ENV
+    delete process.env.VEER_API_PREFIX
+
+  })
+
+  afterEach(() => {
+    console.log = originalLog
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    vi.restoreAllMocks()
+  })
+
+  async function loadPlugin() {
+    return (await import('../../lib/server/nitro-log-request')).default
+  }
+
+  function makeHooks() {
+    const hooks: Record<string, ((...args: unknown[]) => void)[]> = {}
+    return {
+      hooks: {
+        hook(name: string, fn: (...args: unknown[]) => void) {
+          ;(hooks[name] ||= []).push(fn)
+        },
+      },
+      fire(name: string, ...args: unknown[]) {
+        for (const fn of hooks[name] ?? []) fn(...args)
+      },
+      callCount(name: string) {
+        return (hooks[name] ?? []).length
+      },
+    }
+  }
+
+  function makeEvent(
+    path = '/',
+    method = 'GET',
+    startedAt?: number,
+  ) {
+    const url = new URL(path, 'http://localhost')
+    const event: Record<string, unknown> = {
+      path,
+      method,
+      url,
+      req: { method, url: url.href, headers: new Headers() },
+      context: { __veerStartedAt: startedAt },
+    }
+    return event
+  }
+
+  it('registers request, response, and error hooks', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+    expect(nitroApp.callCount('request')).toBe(1)
+    expect(nitroApp.callCount('response')).toBe(1)
+    expect(nitroApp.callCount('error')).toBe(1)
+  })
+
+  it('logs a successful page render with label "page"', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    const event = makeEvent('/users/42', 'GET', 0)
+    ;(event.context as { __veerStartedAt?: number }).__veerStartedAt =
+      performance.now() - 25
+
+    nitroApp.fire(
+      'response',
+      new Response('<html></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+      event,
+    )
+
+    expect(logged).toHaveLength(1)
+    const line = logged[0]!
+    expect(line).toContain('GET')
+    expect(line).toContain('/users/42')
+    expect(line).toContain('200')
+    expect(line).toMatch(/\d+ms/)
+    expect(line).toContain('page')
+  })
+
+  it('classifies api routes', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('{"ok":true}', {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      }),
+      makeEvent('/api/orders', 'POST', 0),
+    )
+
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toContain('POST')
+    expect(logged[0]).toContain('/api/orders')
+    expect(logged[0]).toContain('201')
+    expect(logged[0]).toContain('api')
+  })
+
+  it('classifies static assets', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('js', {
+        status: 200,
+        headers: { 'content-type': 'application/javascript' },
+      }),
+      makeEvent('/_veer/entry.js', 'GET', 0),
+    )
+
+    expect(logged[0]).toContain('asset')
+  })
+
+  it('labels 5xx responses as "error"', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('boom', { status: 503 }),
+      makeEvent('/api/health', 'GET', 0),
+    )
+
+    expect(logged[0]).toContain('503')
+    expect(logged[0]).toContain('error')
+  })
+
+  it('uppercases the HTTP method', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('', { status: 200 }),
+      makeEvent('/api/foo', 'patch', 0),
+    )
+
+    expect(logged[0]).toContain('PATCH')
+  })
+
+  it('preserves the query string in the URL', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('<html></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+      makeEvent('/search?q=hello&page=2', 'GET', 0),
+    )
+
+    expect(logged[0]).toContain('/search?q=hello&page=2')
+  })
+
+  it('skips logging when request hook did not record a start time', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('', { status: 200 }),
+      makeEvent('/x', 'GET', undefined),
+    )
+
+    expect(logged).toHaveLength(0)
+  })
+
+  it('logs from the error hook with method/path/500', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire('error', new Error('boom'), {
+      event: makeEvent('/orders', 'POST', 0),
+    })
+
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toContain('POST')
+    expect(logged[0]).toContain('/orders')
+    expect(logged[0]).toContain('500')
+    expect(logged[0]).toContain('error')
+    expect(logged[0]).toContain('boom')
+  })
+
+  it('skips error logging when there is no event', async () => {
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire('error', new Error('orphan'), { event: undefined })
+    expect(logged).toHaveLength(0)
+  })
+
+  it('classifies routes under a custom apiPrefix (VEER_API_PREFIX="/v1")', async () => {
+    process.env.VEER_API_PREFIX = '/v1'
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+      makeEvent('/v1/orders', 'GET', 0),
+    )
+
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toContain('/v1/orders')
+    expect(logged[0]).toContain('api')
+  })
+
+  it('still classifies "/api/*" as api when VEER_API_PREFIX is unset (default)', async () => {
+    // VEER_API_PREFIX is deleted in beforeEach
+    const nitroApp = makeHooks()
+    const plugin = await loadPlugin()
+    plugin(nitroApp as unknown as Parameters<typeof plugin>[0])
+
+    nitroApp.fire(
+      'response',
+      new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+      makeEvent('/api/orders', 'GET', 0),
+    )
+
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toContain('api')
+  })
+})

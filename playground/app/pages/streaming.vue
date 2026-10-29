@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { useHead, useAsyncData } from '@dvlkit/nuxe'
+import { useHead, useAsyncData } from '@devlusoft/veer'
 
 definePage({
   meta: {layout: 'default'},
 })
 
 useHead({
-  title: 'Streaming Demo | nuxe',
+  title: 'Streaming Demo | veer',
   meta: [
-    {name: 'description', content: 'Demonstrates HTML streaming with Vue + @unhead/vue + nuxe'},
+    {name: 'description', content: 'Demonstrates HTML streaming with Vue + @unhead/vue + veer'},
   ],
 })
 
