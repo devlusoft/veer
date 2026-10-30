@@ -18,7 +18,7 @@ export {
   type H3Event,
   type H3EventContext,
   type EventHandler,
-} from 'h3'
+} from 'nitro/h3'
 
 export { default as handler } from './handler'
 export { loadRuntimeConfig, resolveRuntimeConfig } from './config'

@@ -15,6 +15,7 @@ export default defineConfig([
       'runtime/index': 'lib/runtime/index.ts',
       'runtime/server-head': 'lib/runtime/server-head.ts',
       'runtime/server-polyfill': 'lib/runtime/server-polyfill.ts',
+      'h3': "lib/h3.ts",
       'server/index': 'lib/server/index.ts',
       'server/handler': 'lib/server/handler.ts',
       'server/nitro-log-request': 'lib/server/nitro-log-request.ts',
@@ -32,7 +33,6 @@ export default defineConfig([
         '@unhead/vue/client',
         '@unhead/vue/server',
         'nitro/vite',
-        'listhen',
         'c12',
         'valibot',
         'citty',
@@ -45,6 +45,8 @@ export default defineConfig([
         const outDir = ctx.options.outDir
         await copyFile(join(outDir, 'index.mjs'), join(outDir, 'index.js'))
         await copyFile(join(outDir, 'index.d.mts'), join(outDir, 'index.d.ts'))
+        await copyFile(join(outDir, 'h3.mjs'), join(outDir, 'h3.js'))
+        await copyFile(join(outDir, 'h3.d.mts'), join(outDir, 'h3.d.ts'))
         await copyFile(join(outDir, 'config/define-config.mjs'), join(outDir, 'config/define-config.js'))
         await copyFile(join(outDir, 'config/define-config.d.mts'), join(outDir, 'config/define-config.d.ts'))
         await copyFile(join(outDir, 'setup.mjs'), join(outDir, 'setup.js'))
@@ -82,7 +84,7 @@ export default defineConfig([
     },
     deps: {
       skipNodeModulesBundle: true,
-      neverBundle: ['vue-router', 'nitro/vite', 'listhen', 'c12', 'valibot', 'citty'],
+      neverBundle: ['vue-router', 'nitro/vite', 'c12', 'valibot', 'citty'],
     },
   },
 ])

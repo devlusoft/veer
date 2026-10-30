@@ -1,6 +1,6 @@
 import { definePlugin } from 'nitro'
-import { getRequestURL } from 'h3'
-import type { HTTPEvent, H3Event } from 'h3'
+import { getRequestURL } from 'nitro/h3'
+import type { HTTPEvent, H3Event } from 'nitro/h3'
 import { logRequest } from '../utils/logger'
 import { isVeerError } from '../runtime/error'
 
@@ -8,8 +8,8 @@ function methodOf(event: HTTPEvent): string {
   return (event.req.method ?? 'GET').toUpperCase()
 }
 
-declare module 'h3' {
-  interface H3EventContext {
+type VeerH3Event = H3Event & {
+  context: H3Event['context'] & {
     __veerStartedAt?: number
   }
 }
@@ -43,11 +43,11 @@ function fullPath(event: HTTPEvent): string {
 
 export default definePlugin((nitroApp) => {
   nitroApp.hooks.hook('request', (event: HTTPEvent) => {
-    ;(event as H3Event).context.__veerStartedAt = performance.now()
+    ;(event as VeerH3Event).context.__veerStartedAt = performance.now()
   })
 
   nitroApp.hooks.hook('response', (res: Response, event: HTTPEvent) => {
-    const h3Event = event as H3Event
+    const h3Event = event as VeerH3Event
     const startedAt = h3Event.context.__veerStartedAt
     if (typeof startedAt !== 'number') return
 
@@ -67,7 +67,7 @@ export default definePlugin((nitroApp) => {
 
     const url = fullPath(event)
     const method = methodOf(event)
-    const status = isVeerError(error) ? error.statusCode : 500
+    const status = isVeerError(error) ? error.status : 500
     logRequest(method, url, status, 0, 'error', error.message)
   })
 })

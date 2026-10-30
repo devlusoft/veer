@@ -1,6 +1,6 @@
 import { getCurrentInstance, inject, provide, ref, type App, type InjectionKey, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { HTTPError, type ErrorInput } from 'h3'
+import { HTTPError, type ErrorInput } from 'nitro/h3'
 
 export interface VeerErrorPayload {
   statusCode?: number
@@ -47,6 +47,14 @@ export function deserializeError(payload: VeerErrorPayload): VeerError {
 export function createError(payload: VeerErrorPayload | string | Error): VeerError {
   if (payload instanceof VeerError) return payload
   if (typeof payload === 'string') return new VeerError({ statusMessage: payload })
+  if (HTTPError.isError(payload)) {
+    return new VeerError({
+      statusCode: payload.status,
+      statusMessage: payload.statusText,
+      message: payload.message,
+      data: payload.data,
+    })
+  }
   if (payload instanceof Error) {
     return new VeerError({
       message: payload.message,
