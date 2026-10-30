@@ -338,7 +338,7 @@ async function renderApp(
       },
     })
 
-    const statusCode = ssrContext.error?.statusCode || 200
+    const statusCode = ssrContext.error?.status || 200
 
     return new Response(htmlStream, {
       status: statusCode,
@@ -351,8 +351,8 @@ async function renderApp(
     console.error('[veer] render error', error)
     if (ssrContext.error) {
       return renderErrorResponse(
-        ssrContext.error.statusCode || 500,
-        ssrContext.error.statusMessage || ssrContext.error.message,
+        ssrContext.error.status || 500,
+        ssrContext.error.statusText || ssrContext.error.message,
       )
     }
     ssrContext.error = createError(error instanceof Error ? error : String(error))

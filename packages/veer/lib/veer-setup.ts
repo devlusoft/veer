@@ -179,6 +179,7 @@ export async function createVeerProjectSetup(cwd: string, config: ResolvedVeerCo
             alias: {
                 '#veer': resolve(cwd, '.veer'),
                 '#shared': resolve(cwd, 'shared'),
+                'nitro/h3': createRequire(import.meta.url).resolve('nitro/h3'),
             },
         },
         optimizeDeps: {

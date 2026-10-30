@@ -6,21 +6,22 @@ import { fileURLToPath } from 'node:url'
 const R = '\x1b[0m'
 
 const C = {
-  amber:   (s: string) => `\x1b[38;2;255;140;60m${s}${R}`,
-  forest:  (s: string) => `\x1b[38;2;80;200;100m${s}${R}`,
-  chalk:   (s: string) => `\x1b[38;2;235;235;240m${s}${R}`,
-  mist:    (s: string) => `\x1b[38;2;150;150;165m${s}${R}`,
-  bold:    (s: string) => `\x1b[1m${s}${R}`,
-  dim:     (s: string) => `\x1b[2m${s}${R}`,
+  amber: (s: string) => `\x1b[38;2;255;140;60m${s}${R}`,
+  forest: (s: string) => `\x1b[38;2;80;200;100m${s}${R}`,
+  chalk: (s: string) => `\x1b[38;2;235;235;240m${s}${R}`,
+  mist: (s: string) => `\x1b[38;2;150;150;165m${s}${R}`,
+  bold: (s: string) => `\x1b[1m${s}${R}`,
+  dim: (s: string) => `\x1b[2m${s}${R}`,
 }
 
 const WORDMARK = [
-  '███╗   ██╗██╗   ██╗██╗  ██╗███████╗',
-  '████╗  ██║██║   ██║╚██╗██╔╝██╔════╝',
-  '██╔██╗ ██║██║   ██║ ╚███╔╝ █████╗  ',
-  '██║╚██╗██║██║   ██║ ██╔██╗ ██╔══╝  ',
-  '██║ ╚████║╚██████╔╝██╔╝ ██╗███████╗',
-  '╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝',
+  '██╗   ██╗███████╗███████╗██████╗ \n' +
+  '██║   ██║██╔════╝██╔════╝██╔══██╗\n' +
+  '██║   ██║█████╗  █████╗  ██████╔╝\n' +
+  '╚██╗ ██╔╝██╔══╝  ██╔══╝  ██╔══██╗\n' +
+  ' ╚████╔╝ ███████╗███████╗██║  ██║\n' +
+  '  ╚═══╝  ╚══════╝╚══════╝╚═╝  ╚═╝\n' +
+  '                                 '
 ].join('\n')
 
 function gradient(text: string, from: readonly [number, number, number], to: readonly [number, number, number]): string {
