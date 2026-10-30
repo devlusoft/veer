@@ -346,7 +346,7 @@ export const ErrorComponent = defineComponent({
   },
   setup(props) {
     return () => h('div', { style: 'font-family:sans-serif;padding:2rem' }, [
-      h('h1', null, props.error.stats || 'Error'),
+      h('h1', null, props.error.status || 'Error'),
       h('p', null, props.error.statusText || props.error.message || 'An error occurred'),
     ])
   },

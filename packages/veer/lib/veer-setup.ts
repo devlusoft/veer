@@ -1,256 +1,259 @@
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
-import {existsSync, mkdirSync, readdirSync, writeFileSync} from 'node:fs'
-import {createRequire} from 'node:module'
-import {resolve, join} from 'node:path'
-import {mergeConfig} from 'vite'
-import type {Plugin, PluginOption, UserConfig} from 'vite'
-import {nitro} from 'nitro/vite'
-import type {ResolvedVeerConfig} from './config'
-import {scanMiddlewares} from './middleware/scanner'
-import veer, {VEER_ENTRY_CLIENT, VEER_ENTRY_SERVER} from './plugin'
-import {scanPlugins} from './plugins/scanner'
-import {scanPages} from './pages/scanner'
-import {generateTypedRouter} from './pages/typed-router'
-import {generateNavigateTo, generateUseRoute} from './pages/generated-composables'
-import {generateRuntimeConfigTypes} from './config/generate-runtime-config-types'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { resolve, join } from 'node:path'
+import { mergeConfig } from 'vite'
+import type { Plugin, PluginOption, UserConfig } from 'vite'
+import { nitro } from 'nitro/vite'
+import type { ResolvedVeerConfig } from './config'
+import { scanMiddlewares } from './middleware/scanner'
+import veer, { VEER_ENTRY_CLIENT, VEER_ENTRY_SERVER } from './plugin'
+import { scanPlugins } from './plugins/scanner'
+import { scanPages } from './pages/scanner'
+import { generateTypedRouter } from './pages/typed-router'
+import { generateNavigateTo, generateUseRoute } from './pages/generated-composables'
+import { generateRuntimeConfigTypes } from './config/generate-runtime-config-types'
 import veerPageMetaPlugin from './pages/page-meta-plugin'
 import vue from '@vitejs/plugin-vue'
-import {VeerViteNodePlugin} from './vite/vite-node-server'
-import {VeerClientManifestPlugin} from './vite/client-manifest'
-import {VeerDevStyleSSRPlugin} from './vite/dev-style-ssr'
+import { VeerViteNodePlugin } from './vite/vite-node-server'
+import { VeerClientManifestPlugin } from './vite/client-manifest'
+import { VeerDevStyleSSRPlugin } from './vite/dev-style-ssr'
 
 export interface VeerProjectSetup {
-    layoutFiles: string[]
-    frameworkPlugins: PluginOption[]
-    baseConfig: UserConfig
+  layoutFiles: string[]
+  frameworkPlugins: PluginOption[]
+  baseConfig: UserConfig
 }
 
 function generateVeerEntries(cwd: string): void {
-    const veerDir = join(cwd, '.veer')
-    if (!existsSync(veerDir)) {
-        mkdirSync(veerDir, {recursive: true})
-    }
-    writeFileSync(join(veerDir, 'entry-server.ts'), VEER_ENTRY_SERVER)
-    writeFileSync(join(veerDir, 'entry-client.ts'), VEER_ENTRY_CLIENT)
+  const veerDir = join(cwd, '.veer')
+  if (!existsSync(veerDir)) {
+    mkdirSync(veerDir, {recursive: true})
+  }
+  writeFileSync(join(veerDir, 'entry-server.ts'), VEER_ENTRY_SERVER)
+  writeFileSync(join(veerDir, 'entry-client.ts'), VEER_ENTRY_CLIENT)
 }
 
 // Workaround for https://github.com/vitejs/vite-plugin-vue/issues/677
 type VuePlugin = Plugin & {
-    transform: {
-        handler: (code: string, id: string, options?: unknown) => unknown
-    }
+  transform: {
+    handler: (code: string, id: string, options?: unknown) => unknown
+  }
 }
 
 function patchVueExclude(plugin: VuePlugin, exclude: RegExp) {
-    if (!plugin?.transform?.handler) return plugin
-    const original = plugin.transform.handler
-    plugin.transform.handler = function (...args) {
-        if (exclude.test(args[1])) return
-        return original.call(this, ...args)
-    }
-    return plugin
+  if (!plugin?.transform?.handler) return plugin
+  const original = plugin.transform.handler
+  plugin.transform.handler = function (...args) {
+    if (exclude.test(args[1])) return
+    return original.call(this, ...args)
+  }
+  return plugin
 }
 
 export async function createVeerProjectSetup(cwd: string, config: ResolvedVeerConfig): Promise<VeerProjectSetup> {
-    generateVeerEntries(cwd)
+  generateVeerEntries(cwd)
 
-    const layoutsDir = resolve(cwd, 'app/layouts')
-    const layoutFiles = existsSync(layoutsDir)
-        ? readdirSync(layoutsDir).filter(f => f.endsWith('.vue'))
-        : []
-    const scannedMiddlewares = scanMiddlewares(cwd)
-    const scannedPages = scanPages(cwd)
-    const scannedPlugins = scanPlugins(cwd)
-    const hasErrorComponent = existsSync(join(cwd, 'app', 'error.vue'))
+  const layoutsDir = resolve(cwd, 'app/layouts')
+  const layoutFiles = existsSync(layoutsDir)
+    ? readdirSync(layoutsDir).filter(f => f.endsWith('.vue'))
+    : []
+  const scannedMiddlewares = scanMiddlewares(cwd)
+  const scannedPages = scanPages(cwd)
+  const scannedPlugins = scanPlugins(cwd)
+  const hasErrorComponent = existsSync(join(cwd, 'app', 'error.vue'))
 
-    writeFileSync(join(cwd, '.veer', 'typed-router.d.ts'), generateTypedRouter(scannedPages))
-    writeFileSync(join(cwd, '.veer', 'runtime-config.d.ts'), generateRuntimeConfigTypes(config.runtimeConfig))
-    writeFileSync(
-        join(cwd, '.veer', 'runtime-config.mjs'),
-        `// Generated by veer — runtime config input (build-time defaults).\n`
-        + `// Env vars (VEER_* / VEER_PUBLIC_*) are overlaid at request time in the handler.\n`
-        + `export default ${JSON.stringify({...config.runtimeConfigInput, baseUrl: config.baseUrl}, null, 2)}\n`,
-    )
-    writeFileSync(
-        join(cwd, '.veer', 'handler.mjs'),
-        `// Generated by veer — wires the user's runtime config input into the request handler.\n`
-        + `import { createHandler } from '@devlusoft/veer/server/handler'\n`
-        + `import runtimeConfigInput from './runtime-config.mjs'\n`
-        + `export default createHandler(runtimeConfigInput)\n`,
-    )
+  writeFileSync(join(cwd, '.veer', 'typed-router.d.ts'), generateTypedRouter(scannedPages))
+  writeFileSync(join(cwd, '.veer', 'runtime-config.d.ts'), generateRuntimeConfigTypes(config.runtimeConfig))
+  writeFileSync(
+    join(cwd, '.veer', 'runtime-config.mjs'),
+    `// Generated by veer — runtime config input (build-time defaults).\n`
+    + `// Env vars (VEER_* / VEER_PUBLIC_*) are overlaid at request time in the handler.\n`
+    + `export default ${JSON.stringify({...config.runtimeConfigInput, baseUrl: config.baseUrl}, null, 2)}\n`,
+  )
+  writeFileSync(
+    join(cwd, '.veer', 'handler.mjs'),
+    `// Generated by veer — wires the user's runtime config input into the request handler.\n`
+    + `import { createHandler } from '@devlusoft/veer/server/handler'\n`
+    + `import runtimeConfigInput from './runtime-config.mjs'\n`
+    + `export default createHandler(runtimeConfigInput)\n`,
+  )
 
-    const veerComposablesDir = join(cwd, '.veer', 'composables')
-    if (!existsSync(veerComposablesDir)) {
-        mkdirSync(veerComposablesDir, {recursive: true})
-    }
-    writeFileSync(join(veerComposablesDir, 'navigateTo.ts'), generateNavigateTo())
-    writeFileSync(join(veerComposablesDir, 'useVeerRoute.ts'), generateUseRoute())
+  const veerComposablesDir = join(cwd, '.veer', 'composables')
+  if (!existsSync(veerComposablesDir)) {
+    mkdirSync(veerComposablesDir, {recursive: true})
+  }
+  writeFileSync(join(veerComposablesDir, 'navigateTo.ts'), generateNavigateTo())
+  writeFileSync(join(veerComposablesDir, 'useVeerRoute.ts'), generateUseRoute())
 
-    const nodeOnlyExternal = (id: string): boolean =>
-        /^(node:|node_modules\/.pnpm\/(c12|chokidar|jiti|exsolve|confbox|pkg-types|readdirp)@)/.test(id)
+  const nodeOnlyExternal = (id: string): boolean =>
+    /^(node:|node_modules\/.pnpm\/(c12|chokidar|jiti|exsolve|confbox|pkg-types|readdirp)@)/.test(id)
 
-    const frameworkPlugins: PluginOption[] = [
-        patchVueExclude(vue() as VuePlugin, /\?assets/),
-        veerPageMetaPlugin(),
-        VeerViteNodePlugin({
-            root: cwd,
-            entryPath: join(cwd, '.veer', 'entry-server.ts'),
-        }),
-        VeerClientManifestPlugin({
-            clientEntry: join(cwd, '.veer', 'entry-client.ts'),
-            serverOutDir: join(cwd, '.output', 'server'),
-        }),
-        VeerDevStyleSSRPlugin({root: cwd}),
-        AutoImport({
-            imports: [
-                'vue',
-                {
-                    'vue-router': [
-                        'useRoute',
-                        'useRouter',
-                        'RouterLink',
-                        'RouterView',
-                        'onBeforeRouteLeave',
-                        'onBeforeRouteUpdate',
-                    ],
-                },
-                {'@devlusoft/veer/runtime': ['useAsyncData', 'useFetch', '$fetch', 'createFetch']},
-                {'@devlusoft/veer': ['definePage', 'defineVeerPlugin', 'defineVeerRouteMiddleware', 'abortNavigation', 'useHead', 'createError', 'showError', 'useError', 'clearError', 'useRuntimeConfig', 'useState', 'useCookie', 'useRequestEvent', 'useRequestHeaders', 'useRequestURL']},
-            ],
-            dirs: ['app/composables', '.veer/composables', 'shared/utils', 'shared/types', 'app/features/*/composables'],
-            dts: '.veer/auto-imports.d.ts',
-        }),
-        Components({
-            dirs: ['app/components', '.veer/components', 'app/features'],
-            globalNamespaces: ["components"],
-            collapseSamePrefixes: true,
-            resolvers: [
-                (name) => {
-                    if (name === 'ClientOnly') {
-                        return {from: '@devlusoft/veer/components/client-only'}
-                    }
-                    if (name === 'VeerPage') {
-                        return {from: '@devlusoft/veer', name: 'VeerPage'}
-                    }
-                    if (name === 'VeerLoadingIndicator') {
-                        return {from: '@devlusoft/veer', name: 'VeerLoadingIndicator'}
-                    }
-                }
-            ],
-            dts: '.veer/components.d.ts',
-            directoryAsNamespace: true,
-        }),
-        veer({
-            layouts: layoutFiles,
-            cwd,
-            pagesDir: 'app/pages',
-            middlewares: scannedMiddlewares,
-            plugins: scannedPlugins,
-            errorComponent: hasErrorComponent
-        }),
-        nitro({
-            preset: 'node-server',
-            serverDir: 'server',
-            apiBaseURL: config.server.apiPrefix,
-            renderer: {
-                handler: join(cwd, '.veer', 'handler.mjs'),
-            },
-            imports: {
-                dirs: ['shared/utils', 'shared/types']
-            },
-            plugins: (() => {
-                try {
-                    return [
-                        createRequire(join(cwd, 'package.json')).resolve(
-                            '@devlusoft/veer/server/nitro-log-request',
-                        ),
-                    ]
-                } catch {
-                    return []
-                }
-            })(),
-        } as Parameters<typeof nitro>[0]),
-    ]
-
-    const baseConfig = mergeConfig({
-        root: cwd,
-        resolve: {
-            alias: {
-                '#veer': resolve(cwd, '.veer'),
-                '#shared': resolve(cwd, 'shared'),
-                'nitro/h3': createRequire(import.meta.url).resolve('nitro/h3'),
-            },
+  const frameworkPlugins: PluginOption[] = [
+    patchVueExclude(vue() as VuePlugin, /\?assets/),
+    veerPageMetaPlugin(),
+    VeerViteNodePlugin({
+      root: cwd,
+      entryPath: join(cwd, '.veer', 'entry-server.ts'),
+    }),
+    VeerClientManifestPlugin({
+      clientEntry: join(cwd, '.veer', 'entry-client.ts'),
+      serverOutDir: join(cwd, '.output', 'server'),
+    }),
+    VeerDevStyleSSRPlugin({root: cwd}),
+    AutoImport({
+      imports: [
+        'vue',
+        {
+          'vue-router': [
+            'useRoute',
+            'useRouter',
+            'RouterLink',
+            'RouterView',
+            'onBeforeRouteLeave',
+            'onBeforeRouteUpdate',
+          ],
         },
-        optimizeDeps: {
-            force: true,
-            exclude: [
-                '@devlusoft/veer',
-                '@devlusoft/veer/runtime',
-                '@devlusoft/veer/server',
-                '@devlusoft/veer/server/handler',
-                '@devlusoft/veer/runtime/server/handler',
-                '@devlusoft/veer/runtime/server-polyfill',
-                'vue',
-                '@vue/runtime-core',
-                '@vue/runtime-dom',
-                '@vue/shared',
-                '@vue/server-renderer',
-                'vue-router',
-                '@unhead/vue',
-                'unhead',
-                'c12',
-                'chokidar',
-                'jiti',
-                'exsolve',
-                'pkg-types',
-                'readdirp',
-                'confbox',
-            ],
-        },
-        plugins: frameworkPlugins,
-        environments: {
-            client: {
-                consumer: 'client',
-                keepProcessEnv: false,
-                build: {
-                    manifest: true,
-                    rollupOptions: {
-                        input: join(cwd, '.veer', 'entry-client.ts'),
-                        external: nodeOnlyExternal,
-                    },
-                },
-            },
-            ssr: {
-                consumer: 'server',
-                define: {
-                    'process.server': true,
-                    'process.client': false,
-                    'process.browser': false,
-                    'import.meta.server': true,
-                    'import.meta.client': false,
-                    'import.meta.browser': false,
-                    'window': 'undefined',
-                    'document': 'undefined',
-                    'navigator': 'undefined',
-                    'location': 'undefined',
-                    'XMLHttpRequest': 'undefined',
-                },
-                build: {
-                    outDir: join(cwd, '.output', 'server', 'ssr'),
-                    rollupOptions: {
-                        input: join(cwd, '.veer', 'entry-server.ts'),
-                    },
-                },
-            },
-        },
-        server: {middlewareMode: true},
-        appType: 'custom',
-    }, config.vite) as UserConfig
+        {'@devlusoft/veer/runtime': ['useAsyncData', 'useFetch', '$fetch', 'createFetch']},
+        {'@devlusoft/veer': ['definePage', 'defineVeerPlugin', 'defineVeerRouteMiddleware', 'abortNavigation', 'useHead', 'createError', 'showError', 'useError', 'clearError', 'useRuntimeConfig', 'useState', 'useCookie', 'useRequestEvent', 'useRequestHeaders', 'useRequestURL']},
+      ],
+      dirs: ['app/composables', '.veer/composables', 'shared/utils', 'shared/types', 'app/features/*/composables'],
+      dts: '.veer/auto-imports.d.ts',
+    }),
+    Components({
+      dirs: ['app/components', '.veer/components', 'app/features'],
+      globalNamespaces: ['components'],
+      collapseSamePrefixes: true,
+      resolvers: [
+        (name) => {
+          if (name === 'ClientOnly') {
+            return {from: '@devlusoft/veer/components/client-only'}
+          }
+          if (name === 'VeerPage') {
+            return {from: '@devlusoft/veer', name: 'VeerPage'}
+          }
+          if (name === 'VeerLoadingIndicator') {
+            return {from: '@devlusoft/veer', name: 'VeerLoadingIndicator'}
+          }
+        }
+      ],
+      dts: '.veer/components.d.ts',
+      directoryAsNamespace: true,
+    }),
+    veer({
+      layouts: layoutFiles,
+      cwd,
+      pagesDir: 'app/pages',
+      middlewares: scannedMiddlewares,
+      plugins: scannedPlugins,
+      errorComponent: hasErrorComponent
+    }),
+    nitro({
+      preset: 'node-server',
+      serverDir: 'server',
+      apiBaseURL: config.server.apiPrefix,
+      renderer: {
+        handler: join(cwd, '.veer', 'handler.mjs'),
+      },
+      imports: {
+        dirs: ['shared/utils', 'shared/types']
+      },
+      plugins: (() => {
+        try {
+          return [
+            createRequire(join(cwd, 'package.json')).resolve(
+              '@devlusoft/veer/server/nitro-log-request',
+            ),
+          ]
+        } catch {
+          return []
+        }
+      })(),
+    } as Parameters<typeof nitro>[0]),
+  ]
 
-    return {
-        layoutFiles,
-        frameworkPlugins,
-        baseConfig,
-    }
+  const baseConfig = mergeConfig({
+    root: cwd,
+    resolve: {
+      alias: {
+        '#veer': resolve(cwd, '.veer'),
+        '#shared': resolve(cwd, 'shared'),
+        'nitro/h3': createRequire(import.meta.url).resolve('nitro/h3'),
+      },
+    },
+    optimizeDeps: {
+      force: true,
+      exclude: [
+        '@devlusoft/veer',
+        '@devlusoft/veer/runtime',
+        '@devlusoft/veer/server',
+        '@devlusoft/veer/server/handler',
+        '@devlusoft/veer/runtime/server/handler',
+        '@devlusoft/veer/runtime/server-polyfill',
+        'vue',
+        '@vue/runtime-core',
+        '@vue/runtime-dom',
+        '@vue/shared',
+        '@vue/server-renderer',
+        'vue-router',
+        '@unhead/vue',
+        'unhead',
+        'c12',
+        'chokidar',
+        'jiti',
+        'exsolve',
+        'pkg-types',
+        'readdirp',
+        'confbox',
+      ],
+    },
+    plugins: frameworkPlugins,
+    environments: {
+      client: {
+        consumer: 'client',
+        keepProcessEnv: false,
+        build: {
+          manifest: true,
+          rollupOptions: {
+            input: join(cwd, '.veer', 'entry-client.ts'),
+            external: nodeOnlyExternal,
+          },
+        },
+      },
+      ssr: {
+        consumer: 'server',
+        define: {
+          'process.server': true,
+          'process.client': false,
+          'process.browser': false,
+          'import.meta.server': true,
+          'import.meta.client': false,
+          'import.meta.browser': false,
+          'window': 'undefined',
+          'document': 'undefined',
+          'navigator': 'undefined',
+          'location': 'undefined',
+          'XMLHttpRequest': 'undefined',
+        },
+        build: {
+          outDir: join(cwd, '.output', 'server', 'ssr'),
+          rollupOptions: {
+            input: join(cwd, '.veer', 'entry-server.ts'),
+          },
+        },
+      },
+    },
+    ssr: {
+      external: ['@devlusoft/veer']
+    },
+    server: {middlewareMode: true},
+    appType: 'custom',
+  }, config.vite) as UserConfig
+
+  return {
+    layoutFiles,
+    frameworkPlugins,
+    baseConfig,
+  }
 }
