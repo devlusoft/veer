@@ -1,5 +1,6 @@
-import type { Plugin, ViteDevServer } from 'vite'
-import { createServer as createNetServer, type Server as NetServer, type Socket } from 'node:net'
+import type { Environment, Plugin, ViteDevServer } from 'vite'
+import { once } from 'node:events'
+import { createServer as createNetServer, type Socket } from 'node:net'
 import { ViteNodeServer as ViteNodeServerImpl } from 'vite-node/server'
 import { chmodSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -30,76 +31,154 @@ function newSocketState(): SocketState {
   }
 }
 
-export function VeerViteNodePlugin(opts: { root: string, entryPath: string }): Plugin {
-  const { socketPath, parentDir } = pickSocketPath()
+interface ViteNodePluginOptions {
+  root: string
+  entryPath: string
+}
+
+interface ViteNodeServerInstance {
+  options: ViteNodeServerOptions
+  close: () => Promise<void>
+}
+
+async function createViteNodeServer(server: ViteDevServer, options: ViteNodePluginOptions): Promise<ViteNodeServerInstance> {
+  const viteNodeServer = new ViteNodeServerImpl(server)
+  const connections = new Set<Socket>()
+
+  const netServer = createNetServer((socket: Socket) => {
+    connections.add(socket)
+    const state = newSocketState()
+
+    function destroySocket(error: unknown): void {
+      socket.destroy(error instanceof Error ? error : new Error(String(error)))
+    }
+
+    socket.on('data', (chunk) => {
+      try {
+        writeChunk(state, chunk)
+        void processMessages(state, socket, viteNodeServer, server).catch(destroySocket)
+      } catch (error: unknown) {
+        destroySocket(error)
+      }
+    })
+
+    socket.on('error', () => resetState(state))
+    socket.on('close', () => {
+      connections.delete(socket)
+      resetState(state)
+    })
+  })
+
+  const {socketPath, parentDir} = pickSocketPath()
   const serverOptions: ViteNodeServerOptions = {
     socketPath,
-    root: opts.root,
-    entryPath: opts.entryPath,
+    root: options.root,
+    entryPath: options.entryPath
   }
 
-  let netServer: NetServer | undefined
-  let viteNodeServer: ViteNodeServerImpl | undefined
-  let closed = false
+  let closePromise: Promise<void> | undefined
 
-  async function close() {
-    if (closed) return
-    closed = true
-    if (netServer?.listening) {
-      await new Promise<void>(resolve => netServer!.close(() => resolve()))
-    }
+  function close(): Promise<void> {
+    closePromise ??= closeSocketServer()
+    return closePromise
+  }
+
+  async function closeSocketServer(): Promise<void> {
+    const closing = netServer.listening ? new Promise<void>((resolve, reject) => {
+      netServer.close((error) => {
+        if (error) {
+          reject(error)
+        } else {
+          resolve()
+        }
+      })
+    }) : Promise.resolve()
+
+    for (const socket of connections) socket.destroy()
+
+    await closing
     cleanupSocketPath(parentDir)
   }
+
+  try {
+    const listening = once(netServer, 'listening')
+
+    if (parentDir) {
+      const previousUmask = process.umask(0o077)
+      try {
+        netServer.listen(socketPath)
+      } finally {
+        process.umask(previousUmask)
+      }
+    } else {
+      netServer.listen(socketPath)
+    }
+
+    await listening
+
+    if (parentDir) chmodSync(socketPath, 0o600)
+
+    netServer.on('error', (error: Error) => {
+      server.config.logger.error(error.message, {error})
+
+      void close().catch((closeError: unknown) => {
+        server.config.logger.error(String(closeError))
+      })
+    })
+
+    return {options: serverOptions, close}
+  } catch (error: unknown) {
+    try {
+      await close()
+    } catch (closeError: unknown) {
+      throw new AggregateError([error, closeError], 'Failed to start and clean up the vite-node server')
+    }
+
+    throw error
+  }
+}
+
+export function VeerViteNodePlugin(options: ViteNodePluginOptions): Plugin {
+  const closeByEnvironment = new WeakMap<Environment, () => Promise<void>>()
 
   return {
     name: 'veer:vite-node-server',
     enforce: 'post',
-    apply: () => true,
-    configureServer(server: ViteDevServer) {
-      viteNodeServer = new ViteNodeServerImpl(server)
+    apply: 'serve',
+    async configureServer(server: ViteDevServer) {
+      const instance = await createViteNodeServer(server, options)
 
-      netServer = createNetServer((socket: Socket) => {
-        const state = newSocketState()
-
-        socket.on('data', (chunk) => {
-          try {
-            writeChunk(state, chunk)
-            void processMessages(state, socket, viteNodeServer!, server)
-          }
-          catch (error) {
-            socket.destroy(error instanceof Error ? error : new Error(String(error)))
-          }
-        })
-
-        socket.on('error', () => resetState(state))
-        socket.on('close', () => resetState(state))
-      })
-
-      const previousUmask = process.umask(0o077)
       try {
-        netServer.listen(socketPath, () => {
-          try {
-            chmodSync(socketPath, 0o600)
-          } catch {
+        const stateFile = `${server.config.root}/.veer/vite-node-socket-path`
+        const serializedOptions = JSON.stringify(instance.options)
 
-          }
-        })
-      } finally {
-        process.umask(previousUmask)
+        mkdirSync(dirname(stateFile), {recursive: true})
+        writeFileSync(stateFile, serializedOptions, 'utf-8')
+        process.env.VEER_VITE_NODE_OPTIONS = serializedOptions
+      } catch (error: unknown) {
+        try {
+          await instance.close()
+        } catch (closeError: unknown) {
+          throw new AggregateError([error, closeError], 'Failed to publish and clean up the vite-node server')
+        }
+
+        throw error
       }
 
-      process.env.VEER_VITE_NODE_OPTIONS = JSON.stringify(serverOptions)
-
-      const cwd = server.config.root
-      const stateFile = `${cwd}/.veer/vite-node-socket-path`
-      mkdirSync(dirname(stateFile), { recursive: true })
-      writeFileSync(stateFile, JSON.stringify(serverOptions), 'utf-8')
-
-      server.httpServer?.on('close', close)
-      process.once('beforeExit', close)
+      closeByEnvironment.set(server.environments.ssr, instance.close)
     },
-    async buildEnd() {
-      await close()
+    async closeBundle() {
+      const close = closeByEnvironment.get(this.environment)
+      if (!close) return
+
+      try {
+        await close()
+      } catch (error: unknown) {
+        this.environment.logger.error(String(error))
+        throw error
+      } finally {
+        closeByEnvironment.delete(this.environment)
+      }
     }
   }
 }
@@ -169,20 +248,20 @@ async function processMessages(state: SocketState, socket: Socket, node: ViteNod
 async function handleRequest(node: ViteNodeServerImpl, server: ViteDevServer, request: ViteNodeRequest): Promise<ViteNodeMessage> {
   switch (request.type as ViteNodeRequestType) {
     case 'module': {
-      const { moduleId } = request.payload as { moduleId: string }
+      const {moduleId} = request.payload as { moduleId: string }
       const result = await node.fetchModule(moduleId)
-      return { id: request.id, type: 'response', data: result }
+      return {id: request.id, type: 'response', data: result}
     }
     case 'resolve': {
-      const { id, importer } = request.payload as { id: string, importer?: string }
+      const {id, importer} = request.payload as { id: string, importer?: string }
       const resolved = await node.resolveId(id, importer)
-      return { id: request.id, type: 'response', data: resolved }
+      return {id: request.id, type: 'response', data: resolved}
     }
     case 'manifest': {
-      return { id: request.id, type: 'response', data: getDevManifest() }
+      return {id: request.id, type: 'response', data: getDevManifest()}
     }
     case 'invalidates':
-      return { id: request.id, type: 'response', data: null }
+      return {id: request.id, type: 'response', data: null}
     default:
       throw new Error(`Unknown request type: ${(request as { type: string }).type}`)
   }
