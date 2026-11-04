@@ -1,6 +1,6 @@
-import { mkdirSync, rmSync, mkdtempSync, chmodSync } from 'node:fs'
-import {join} from 'node:path'
-import {tmpdir} from 'node:os'
+import { rmSync, mkdtempSync, chmodSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
 export interface ViteNodeServerOptions {
@@ -49,26 +49,36 @@ export interface ResolveRequestPayload {
   importer?: string
 }
 
-export function pickSocketPath(): {socketPath: string, parentDir?: string} {
+export function pickSocketPath(): { socketPath: string, parentDir?: string } {
   if (process.platform === 'win32') {
     return {
       socketPath: `\\\\.\\pipe\\veer-vite-${randomUUID().slice(0, 8)}`,
     }
   }
-  const baseDir = tmpdir()
-  let parentDir = mkdtempSync(join(baseDir, 'veer-vite-'))
-  if (Buffer.byteLength(join(parentDir, 'veer.sock')) > 104) {
-    parentDir = join('/tmp', `veer-vite-${randomUUID().slice(0, 8)}`)
-    mkdirSync(parentDir, { mode: 0o700 })
+
+  const socketFileName = 'veer.sock'
+  const maxSocketPathBytes = 103
+  let parentDir = mkdtempSync(join(tmpdir(), 'veer-vite-'))
+
+  try {
+    if (Buffer.byteLength(join(parentDir, socketFileName)) > maxSocketPathBytes) {
+      rmSync(parentDir, {recursive: true, force: true})
+      parentDir = mkdtempSync(join('/tmp', 'veer-vite-'))
+    }
+
+    chmodSync(parentDir, 0o700)
+
+    return {
+      socketPath: join(parentDir, socketFileName),
+      parentDir,
+    }
+  } catch (err: unknown) {
+    rmSync(parentDir, {recursive: true, force: true})
+    throw err
   }
-  chmodSync(parentDir, 0o700)
-  return { socketPath: join(parentDir, 'veer.sock'), parentDir }
 }
 
 export function cleanupSocketPath(parentDir: string | undefined): void {
   if (!parentDir) return
-  try {
-    rmSync(parentDir, { recursive: true, force: true })
-  } catch {
-  }
+  rmSync(parentDir, {recursive: true, force: true})
 }
