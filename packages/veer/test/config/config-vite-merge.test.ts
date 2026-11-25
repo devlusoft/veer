@@ -92,6 +92,10 @@ describe('defineConfig({ vite: {...} }) merge', () => {
         (p) => (p as { name?: string }).name,
       )
       expect(pluginNames).toEqual(expect.arrayContaining(['vite:vue']))
+      const alias = (setup.baseConfig.resolve as { alias?: Record<string, string> } | undefined)?.alias ?? {}
+      expect(alias['@']).toBe(join(cwd, 'app'))
+      expect(alias['#veer']).toBe(join(cwd, '.veer'))
+      expect(alias['#shared']).toBe(join(cwd, 'shared'))
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }

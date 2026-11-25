@@ -8,17 +8,15 @@
     "skipLibCheck": true,
     "types": ["vite/client"],
     "paths": {
-      "#shared/*": ["./shared/*"]
+      "#shared/*": ["./shared/*"],
+      "@/*": ["./app/*"]
     }
   },
   "include": [
     ".veer/**/*.d.ts",
     ".veer/typed-router.d.ts",
-    "app.vue",
-    "pages/**/*.vue",
-    "layouts/**/*.vue",
-    "components/**/*.vue",
-    "composables/**/*.ts",
+    "app/**/*.vue",
+    "app/**/*.ts",
     "veer.config.ts"
   ]
 }
