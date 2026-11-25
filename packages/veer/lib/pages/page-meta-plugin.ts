@@ -1,5 +1,5 @@
 import type { Plugin } from 'vite'
-import { parse as parseSFC } from '@vue/compiler-sfc'
+import { parse as parseSFC } from 'vue/compiler-sfc'
 import MagicString from 'magic-string'
 
 const DEFINE_PAGE_RE = /\bdefinePage\s*\(/

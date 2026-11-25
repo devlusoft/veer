@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { extname, join, relative, sep } from 'node:path'
-import { parse as parseSFC } from '@vue/compiler-sfc'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
+import { parse as parseSFC } from 'vue/compiler-sfc'
 
 export interface RouteRules {
   ssr?: boolean
