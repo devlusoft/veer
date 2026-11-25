@@ -1,5 +1,16 @@
 # @devlusoft/veer
 
+## 0.2.1
+
+### Patch Changes
+
+- 12c25d9: fixe vite node restart
+- a582e11: Drop `@vue/compiler-sfc` from dependencies: pages and `definePage` meta are now parsed with `vue/compiler-sfc` from the project's `vue`, so projects install a single copy of the compiler and page scanning stays in sync with the vue version that compiles the app.
+- 5e1279b: Fix the `@devlusoft/veer/setup` export, which pointed to a file that is not in the package and failed with `ERR_MODULE_NOT_FOUND`.
+- cd2536f: `veer build` default `NODE_ENV` to `production` before loading `.env` files, so `.env.development` is no longer loaded in production, and `veer start` respects a `NODE_ENV` from the environment (e.g. `staging`) instead of forcing `production`
+- fc2f3e4: Require `vite ^8.2.4` as a peer, the first 8.2 release with fixes for the dev server advisories (GHSA-rq7h-c2jc-7f22, GHSA-vfpm-58rq-9qcg, GHSA-9jrq-w75r-8gcw and the bundled `launch-editor` ones). Also bump `devalue` to 5.9.3 and `unplugin` to 3.3.0, which removes the `unctx` peer warning on install.
+- 1d9e43b: Accept any compatible minor or patch release of the peers (`vue ^3.5.41`, `vue-router ^5.1.0`, `vite ^8.2.1`), so new projects install with `npm install` without `ERESOLVE` and pnpm no longer warns about these peers.
+
 ## 0.2.0
 
 ### Minor Changes
