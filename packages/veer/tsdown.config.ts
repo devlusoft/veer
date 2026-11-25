@@ -83,8 +83,7 @@ export default defineConfig([
       'cli/commands/start': 'lib/cli/commands/start.ts',
     },
     deps: {
-      skipNodeModulesBundle: true,
-      neverBundle: ['vue-router', 'nitro/vite', 'c12', 'valibot', 'citty'],
+      neverBundle: true,
     },
   },
 ])
