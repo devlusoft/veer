@@ -22,7 +22,7 @@ describe('createAsyncDataRegistry', () => {
     const registry = setupRegistry()
     const first = registry.acquire('k', newEntry)
     registry.acquire('k', newEntry)
-    registry.release('k', first.entry)
+    expect(registry.release('k', first.entry)).toEqual({status: 'retained'})
 
     expect(registry.acquire('k', newEntry).status).toBe('shared')
   })
@@ -32,7 +32,7 @@ describe('createAsyncDataRegistry', () => {
     const first = registry.acquire('k', newEntry)
     const second = registry.acquire('k', newEntry)
     registry.release('k', first.entry)
-    registry.release('k', second.entry)
+    expect(registry.release('k', second.entry)).toEqual({status: 'dropped'})
 
     expect(registry.acquire('k', newEntry).status).toBe('created')
   })

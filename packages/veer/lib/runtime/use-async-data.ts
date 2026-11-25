@@ -17,8 +17,8 @@ import {
 import { getSSRContext, tryUseVeerApp } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
 import { type HydratedAsyncData, readHydratedAsyncData } from './async-data-payload'
-import { createAsyncDataRegistry } from './async-data-registry'
-import { createAsyncDataRunner } from './async-data-runner'
+import { createAsyncDataRegistry, type NewAsyncDataEntry } from './async-data-registry'
+import { createAsyncDataRunner, type AsyncDataRunner } from './async-data-runner'
 
 export type AsyncDataKey = string | Ref<string> | (() => string)
 
@@ -115,6 +115,21 @@ function applyHydratedAsyncData<T>(entry: AsyncDataEntry<T>, hydrated: HydratedA
   }
 }
 
+interface AsyncDataBinding<T> {
+  key: string
+  entry: AsyncDataEntry<T>
+  runner: AsyncDataRunner
+}
+
+function followRef<V>(source: () => Ref<V>): Ref<V> {
+  return computed({
+    get: () => source().value,
+    set: (value) => {
+      source().value = value
+    },
+  })
+}
+
 export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>, options: UseAsyncDataOptions<T> = {}): AsyncData<T> {
   if (!key) throw new Error('[veer] useAsyncData: `key` is required')
 
@@ -127,8 +142,8 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
   const resolvedKey = String(keyRef.value)
 
   const registry = createAsyncDataRegistry(tryUseVeerApp())
-  const acquired = registry.acquire<T>(resolvedKey, () => ({
-    key: resolvedKey,
+  const createEntry = (entryKey: string): NewAsyncDataEntry<T> => ({
+    key: entryKey,
     data: shallowRef<T | null>(null) as Ref<T | null>,
     pending: ref(!!options.lazy),
     error: shallowRef<Error | null>(null),
@@ -142,13 +157,15 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     _retryDelay: Math.max(0, options.retryDelayMs ?? 0),
     _inflight: null,
     _abortController: null,
-  }))
+  })
+  const acquired = registry.acquire<T>(resolvedKey, () => createEntry(resolvedKey))
   const entry = acquired.entry
   if (acquired.status === 'shared') {
     warnIfIncompatible(entry as AsyncDataEntry<unknown>, options, handler as AsyncDataHandler<unknown>, resolvedKey)
   }
 
   const runner = createAsyncDataRunner(entry, handler, ssrContext)
+  const current = shallowRef<AsyncDataBinding<T>>({key: resolvedKey, entry, runner})
 
   if (isClient && acquired.status === 'created') {
     if (entry._lazy) {
@@ -205,14 +222,21 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
 
     if (isRef(key) || typeof key === 'function') {
       stopKeyWatch = watch(keyRef, async (newKey) => {
-        if (newKey === resolvedKey) return
+        const previous = current.value
+        if (newKey === previous.key) return
         keyChanging = true
         try {
-          entry.data.value = null
-          entry.error.value = null
-          entry.pending.value = true
-          entry.status.value = 'pending'
-          await runner.run(newKey)
+          const released = registry.release(previous.key, previous.entry)
+          if (released.status === 'dropped') previous.entry._abortController?.abort()
+
+          const next = registry.acquire<T>(newKey, () => createEntry(newKey))
+          const nextRunner = createAsyncDataRunner(next.entry, handler, ssrContext)
+          current.value = {key: newKey, entry: next.entry, runner: nextRunner}
+          if (next.status === 'shared') return
+
+          next.entry.pending.value = true
+          next.entry.status.value = 'pending'
+          await nextRunner.run(newKey)
         } finally {
           await nextTick()
           keyChanging = false
@@ -223,12 +247,13 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     if (options.watch !== undefined) {
       stopDepsWatch = watch(options.watch, () => {
         if (keyChanging) return
-        entry.pending.value = true
-        entry.status.value = 'pending'
+        const {key: currentKey, entry: currentEntry, runner: currentRunner} = current.value
+        currentEntry.pending.value = true
+        currentEntry.status.value = 'pending'
         if (ssrContext) {
-          ssrContext.pending.set(resolvedKey, runner.run(resolvedKey))
+          ssrContext.pending.set(currentKey, currentRunner.run(currentKey))
         } else {
-          void runner.run(resolvedKey)
+          void currentRunner.run(currentKey)
         }
       })
     }
@@ -237,20 +262,22 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
       onScopeDispose(() => {
         stopKeyWatch?.()
         stopDepsWatch?.()
-        registry.release(resolvedKey, entry)
+        const {key: currentKey, entry: currentEntry} = current.value
+        const released = registry.release(currentKey, currentEntry)
+        if (released.status === 'dropped') currentEntry._abortController?.abort()
       })
     }
   }
 
   const refresh = async (): Promise<void> => {
-    await runner.run(resolvedKey)
+    await current.value.runner.run(current.value.key)
   }
 
   return createAsyncData({
-    data: entry.data,
-    pending: entry.pending,
-    error: entry.error,
-    status: entry.status,
+    data: followRef(() => current.value.entry.data),
+    pending: followRef(() => current.value.entry.pending),
+    error: followRef(() => current.value.entry.error),
+    status: followRef(() => current.value.entry.status),
     refresh,
   }, entry._inflight)
 }

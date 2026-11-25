@@ -295,10 +295,6 @@ describe('useAsyncData (client)', () => {
 })
 
 describe('useAsyncData (reactive key + watch)', () => {
-    // Client-side watcher tests need a Vue effect scope to register the
-    // watchers and to exercise cleanup via onScopeDispose. We also stub
-    // `window` so useAsyncData takes the client code path (the same trick
-    // the 'client' describe block above uses).
     let scope: ReturnType<typeof effectScope>
 
     beforeEach(() => {
@@ -493,8 +489,6 @@ describe('useAsyncData (reactive key + watch)', () => {
         await vi.waitFor(() => {
             expect(data.value).toBe('b')
         })
-        // The key watcher (sync) fires first and re-fetches; the deps watcher
-        // is gated on `keyChanging` and must skip. So count goes 1 -> 2.
         expect(count).toBe(2)
     })
 
@@ -516,7 +510,6 @@ describe('useAsyncData (reactive key + watch)', () => {
         source.value = 99
         await nextTick()
         await nextTick()
-        // After dispose the watcher should not have re-run the handler.
         expect(handler).toHaveBeenCalledTimes(1)
     })
 
@@ -534,6 +527,53 @@ describe('useAsyncData (reactive key + watch)', () => {
         await nextTick()
         await nextTick()
         expect(handler).toHaveBeenCalledTimes(1)
+    })
+
+    function handlerPerKey(key: Ref<string>) {
+        const requests = new Map<string, { signal: AbortSignal; resolve: (value: string) => void }>()
+        const handler = vi.fn((_veerApp: unknown, {signal}: { signal: AbortSignal }) => {
+            const requestedKey = key.value
+            return new Promise<string>((resolve) => {
+                requests.set(requestedKey, {signal, resolve})
+            })
+        })
+        return {handler, requests}
+    }
+
+    it('shows the data of the current key after switching back to a previous one', async () => {
+        const key = ref('1')
+        const handler = vi.fn(async () => `product-${key.value}`)
+        const {data} = inScope(() => useAsyncData<string>(key, handler)) as ReturnType<typeof useAsyncData<string>>
+
+        await vi.waitFor(() => expect(data.value).toBe('product-1'))
+        key.value = '2'
+        await vi.waitFor(() => expect(data.value).toBe('product-2'))
+        key.value = '1'
+        await vi.waitFor(() => expect(data.value).toBe('product-1'))
+    })
+
+    it('shows the data of the new key when the key changes while a request is in flight', async () => {
+        const key = ref('1')
+        const {handler, requests} = handlerPerKey(key)
+        const {data} = inScope(() => useAsyncData<string>(key, handler)) as ReturnType<typeof useAsyncData<string>>
+
+        key.value = '2'
+        requests.get('2')?.resolve('product-2')
+        requests.get('1')?.resolve('product-1')
+
+        await vi.waitFor(() => expect(data.value).toBe('product-2'))
+        expect(handler).toHaveBeenCalledTimes(2)
+    })
+
+    it('aborts the request of the previous key when the key changes', () => {
+        const key = ref('1')
+        const {handler, requests} = handlerPerKey(key)
+        inScope(() => useAsyncData<string>(key, handler))
+
+        key.value = '2'
+
+        expect(requests.get('1')?.signal.aborted).toBe(true)
+        expect(requests.get('2')?.signal.aborted).toBe(false)
     })
 })
 
@@ -803,7 +843,8 @@ describe('useAsyncData (await)', () => {
 
         expect(handler).toHaveBeenCalledTimes(1)
         expect(second.data.value).toBe('cached')
-        expect(second.data).toBe(first.data)
+        first.data.value = 'edited'
+        expect(second.data.value).toBe('edited')
     })
 
     it('waits for an in-flight cached request without starting another handler', async () => {
@@ -930,5 +971,15 @@ describe('useAsyncData (abort)', () => {
 
         expect(error.value).toBeNull()
         expect(data.value).toBe('fresh')
+    })
+
+    it('aborts the running execution when its last consumer unmounts', () => {
+        const {handler, calls} = deferredHandler()
+        const scope = effectScope()
+        scope.run(() => useAsyncData<string>('unmounted', handler))
+
+        scope.stop()
+
+        expect(calls[0]?.signal.aborted).toBe(true)
     })
 })
