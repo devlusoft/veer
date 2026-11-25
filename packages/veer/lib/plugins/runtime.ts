@@ -19,6 +19,7 @@ export interface VeerApp {
     state: VeerState
     payload: { state: VeerState }
     _asyncData?: Map<string, unknown>
+    _asyncDataNavigation?: number
     hook: <N extends keyof VeerAppHooks>(name: N, fn: VeerAppHooks[N]) => void
     removeHook: <N extends keyof VeerAppHooks>(name: N, fn: VeerAppHooks[N]) => void
     hookOnce: <N extends keyof VeerAppHooks>(name: N, fn: VeerAppHooks[N]) => void

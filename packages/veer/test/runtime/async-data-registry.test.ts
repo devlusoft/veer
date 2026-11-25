@@ -36,4 +36,24 @@ describe('createAsyncDataRegistry', () => {
 
     expect(registry.acquire('k', newEntry).status).toBe('created')
   })
+
+  it('hands out a held entry as stale only to the first consumer of a new navigation', () => {
+    const registry = setupRegistry()
+    registry.acquire('k', newEntry)
+    registry.advanceNavigation()
+
+    expect(registry.acquire('k', newEntry).status).toBe('stale')
+    expect(registry.acquire('k', newEntry).status).toBe('shared')
+  })
+
+  it('treats an entry created in a navigation as current until the next one', () => {
+    const registry = setupRegistry()
+    registry.advanceNavigation()
+    registry.acquire('k', newEntry)
+
+    expect(registry.acquire('k', newEntry).status).toBe('shared')
+
+    registry.advanceNavigation()
+    expect(registry.acquire('k', newEntry).status).toBe('stale')
+  })
 })

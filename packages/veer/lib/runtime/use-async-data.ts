@@ -18,7 +18,7 @@ import { getSSRContext, tryUseVeerApp } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
 import { type HydratedAsyncData, readHydratedAsyncData } from './async-data-payload'
 import { createAsyncDataRegistry, type NewAsyncDataEntry } from './async-data-registry'
-import { createAsyncDataRunner, type AsyncDataRunner } from './async-data-runner'
+import { createAsyncDataRunner, type AsyncDataRetryPolicy, type AsyncDataRunner } from './async-data-runner'
 
 export type AsyncDataKey = string | Ref<string> | (() => string)
 
@@ -67,19 +67,27 @@ export interface AsyncDataEntry<T = unknown> {
   _optionsHash: string
   _server: boolean
   _lazy: boolean
-  _retries: number
-  _retryDelay: number
   _deps: number
+  _navigation: number
   _inflight: Promise<void> | null
   _abortController: AbortController | null
 }
 
+function toRetryPolicy(options: UseAsyncDataOptions<unknown>): AsyncDataRetryPolicy {
+  return {
+    count: Math.max(0, options.retryCount ?? 0),
+    delayMs: Math.max(0, options.retryDelayMs ?? 0),
+  }
+}
+
 function hashOptions(opts: UseAsyncDataOptions<unknown>): string {
+  const retry = toRetryPolicy(opts)
+
   return JSON.stringify({
     server: opts.server !== false,
     lazy: !!opts.lazy,
-    retryCount: Math.max(0, opts.retryCount ?? 0),
-    retryDelayMs: Math.max(0, opts.retryDelayMs ?? 0),
+    retryCount: retry.count,
+    retryDelayMs: retry.delayMs,
   })
 }
 
@@ -153,8 +161,6 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     _optionsHash: hashOptions(options),
     _server: options.server !== false,
     _lazy: !!options.lazy,
-    _retries: Math.max(0, options.retryCount ?? 0),
-    _retryDelay: Math.max(0, options.retryDelayMs ?? 0),
     _inflight: null,
     _abortController: null,
   })
@@ -164,7 +170,8 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     warnIfIncompatible(entry as AsyncDataEntry<unknown>, options, handler as AsyncDataHandler<unknown>, resolvedKey)
   }
 
-  const runner = createAsyncDataRunner(entry, handler, ssrContext)
+  const retry = toRetryPolicy(options)
+  const runner = createAsyncDataRunner(entry, handler, ssrContext, retry)
   const current = shallowRef<AsyncDataBinding<T>>({key: resolvedKey, entry, runner})
 
   if (isClient && acquired.status === 'created') {
@@ -214,6 +221,18 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     }
   }
 
+  if (isClient && acquired.status === 'stale') {
+    entry.pending.value = true
+    entry.status.value = 'pending'
+    if (options.lazy) {
+      onMounted(() => {
+        void runner.run(resolvedKey)
+      })
+    } else {
+      void runner.run(resolvedKey)
+    }
+  }
+
   if (isClient) {
     let keyChanging = false
     const hasScope = !!getCurrentScope()
@@ -230,7 +249,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
           if (released.status === 'dropped') previous.entry._abortController?.abort()
 
           const next = registry.acquire<T>(newKey, () => createEntry(newKey))
-          const nextRunner = createAsyncDataRunner(next.entry, handler, ssrContext)
+          const nextRunner = createAsyncDataRunner(next.entry, handler, ssrContext, retry)
           current.value = {key: newKey, entry: next.entry, runner: nextRunner}
           if (next.status === 'shared') return
 

@@ -1,7 +1,8 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {createSSRApp, defineComponent, effectScope, nextTick, ref, type Ref} from 'vue'
 import {createVeerApp, createVeerState} from '../../lib'
-import {endHydration} from '../../lib/runtime'
+import {endHydration, type AsyncData, type AsyncDataHandler, type UseAsyncDataOptions} from '../../lib/runtime'
+import {createAsyncDataRegistry} from '../../lib/runtime/async-data-registry'
 import type {VeerSSRContext} from '../../lib/types/ssr-context'
 import {
     setHydratedPayload,
@@ -983,3 +984,142 @@ describe('useAsyncData (abort)', () => {
         expect(calls[0]?.signal.aborted).toBe(true)
     })
 })
+
+describe('useAsyncData (navigation)', () => {
+    beforeEach(() => {
+        vi.stubGlobal('window', {})
+        setHydratedPayload({})
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        setHydratedPayload({})
+    })
+
+    function setupNavigation() {
+        const app = createSSRApp(defineComponent({render: () => null}))
+        const veerApp = createVeerApp({
+            vueApp: app,
+            router: {} as any,
+            config: {public: {}},
+            ssrContext: undefined as unknown as VeerSSRContext,
+            state: createVeerState(),
+        })
+        const registry = createAsyncDataRegistry(veerApp)
+
+        function mount<T>(key: string, handler: AsyncDataHandler<T>, options?: UseAsyncDataOptions<T>) {
+            const scope = effectScope()
+            let result!: AsyncData<T>
+            app.runWithContext(() => {
+                scope.run(() => {
+                    result = useAsyncData<T>(key, handler, options)
+                })
+            })
+            return {result, scope}
+        }
+
+        return {mount, navigate: registry.advanceNavigation}
+    }
+
+    it('requests again when a page mounts on a key the previous page still holds', async () => {
+        const {mount, navigate} = setupNavigation()
+        const productHandler = vi.fn().mockResolvedValue('product-1')
+        const offersHandler = vi.fn().mockResolvedValue('offers')
+        const product = mount<string>('detail', productHandler)
+        await vi.waitFor(() => expect(product.result.data.value).toBe('product-1'))
+
+        navigate()
+        const offers = mount<string>('detail', offersHandler)
+        product.scope.stop()
+
+        await vi.waitFor(() => expect(offers.result.data.value).toBe('offers'))
+        expect(offersHandler).toHaveBeenCalledTimes(1)
+        expect(productHandler).toHaveBeenCalledTimes(1)
+    })
+
+    it('shares one request between consumers of the same navigation, even one that mounts later', async () => {
+        const {mount, navigate} = setupNavigation()
+        const previous = mount<string>('detail', vi.fn().mockResolvedValue('before'))
+        await vi.waitFor(() => expect(previous.result.data.value).toBe('before'))
+
+        navigate()
+        const handler = vi.fn().mockResolvedValue('after')
+        const page = mount<string>('detail', handler)
+        const sibling = mount<string>('detail', handler)
+        await vi.waitFor(() => expect(page.result.data.value).toBe('after'))
+        const modal = mount<string>('detail', handler)
+
+        expect(handler).toHaveBeenCalledTimes(1)
+        expect(sibling.result.data.value).toBe('after')
+        expect(modal.result.data.value).toBe('after')
+    })
+
+    it('does not call the handler of a consumer that stays mounted across navigations', async () => {
+        const {mount, navigate} = setupNavigation()
+        const layoutHandler = vi.fn().mockResolvedValue('layout')
+        const pageHandler = vi.fn().mockResolvedValue('page')
+        const layout = mount<string>('detail', layoutHandler)
+        await vi.waitFor(() => expect(layout.result.data.value).toBe('layout'))
+
+        navigate()
+        mount<string>('detail', pageHandler)
+
+        await vi.waitFor(() => expect(layout.result.data.value).toBe('page'))
+        expect(layoutHandler).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the previous data and reports pending while the new request runs', async () => {
+        const {mount, navigate} = setupNavigation()
+        const previous = mount<string>('detail', vi.fn().mockResolvedValue('before'))
+        await vi.waitFor(() => expect(previous.result.data.value).toBe('before'))
+
+        navigate()
+        let release!: (value: string) => void
+        const next = mount<string>('detail', () => new Promise<string>((resolve) => {
+            release = resolve
+        }))
+
+        expect(next.result.data.value).toBe('before')
+        expect(next.result.pending.value).toBe(true)
+
+        release('after')
+        await vi.waitFor(() => expect(next.result.data.value).toBe('after'))
+        expect(next.result.pending.value).toBe(false)
+    })
+
+    it('never shows the result of the previous page request after the new one', async () => {
+        const {mount, navigate} = setupNavigation()
+        const requests: Array<{ signal: AbortSignal; resolve: (value: string) => void }> = []
+        const handler = (_veerApp: unknown, {signal}: { signal: AbortSignal }) =>
+          new Promise<string>((resolve) => {
+              requests.push({signal, resolve})
+          })
+
+        mount<string>('detail', handler)
+        navigate()
+        const next = mount<string>('detail', handler)
+
+        expect(requests[0]?.signal.aborted).toBe(true)
+
+        requests[1]?.resolve('after')
+        await vi.waitFor(() => expect(next.result.data.value).toBe('after'))
+        requests[0]?.resolve('before')
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(next.result.data.value).toBe('after')
+    })
+
+    it('retries with the options of the consumer that requests, not those of the previous page', async () => {
+        const {mount, navigate} = setupNavigation()
+        const previous = mount<string>('detail', vi.fn().mockResolvedValue('before'), {retryCount: 3})
+        await vi.waitFor(() => expect(previous.result.data.value).toBe('before'))
+
+        navigate()
+        const failing = vi.fn().mockRejectedValue(new Error('down'))
+        const next = mount<string>('detail', failing)
+
+        await vi.waitFor(() => expect(next.result.status.value).toBe('error'))
+        expect(failing).toHaveBeenCalledTimes(1)
+    })
+})
+
