@@ -21,6 +21,7 @@ async function runWithRetries<T>(
       return await handler(veerApp, {signal})
     } catch (err) {
       lastError = err
+      if (signal.aborted) throw err
       if (attempt < retries && delay > 0) {
         await new Promise((resolve) => setTimeout(resolve, delay))
       }
@@ -37,39 +38,43 @@ export function createAsyncDataRunner<T>(
 ): AsyncDataRunner {
   const isClient = typeof window !== 'undefined'
 
-  async function execute(key: string): Promise<void> {
+  async function execute(key: string, signal: AbortSignal): Promise<void> {
     const execVeerApp = !isClient ? tryUseVeerApp() : null
-    const abortController = new AbortController()
     const exec = (): Promise<T> => {
-      const callHandler = () => runWithRetries<T>(handler, execVeerApp as VeerApp, abortController.signal, entry._retries, entry._retryDelay)
+      const callHandler = () => runWithRetries<T>(handler, execVeerApp as VeerApp, signal, entry._retries, entry._retryDelay)
       return execVeerApp && !isClient ? execVeerApp.vueApp.runWithContext(callHandler) : callHandler()
     }
     entry.error.value = null
     try {
       const result = await exec()
+      if (signal.aborted) return
       entry.data.value = result
       entry.status.value = 'success'
       if (ssrContext) ssrContext.payload[key] = result
     } catch (err) {
+      if (signal.aborted) return
       entry.error.value = err instanceof Error ? err : new Error(String(err))
       entry.status.value = 'error'
       if (ssrContext) ssrContext.payload[key] = serializeAsyncDataError(entry.error.value)
     } finally {
-      entry.pending.value = false
+      if (!signal.aborted) entry.pending.value = false
       if (ssrContext) ssrContext.pending.delete(key)
     }
   }
 
   return {
     async run(key: string): Promise<void> {
-      if (entry._inflight) {
-        await entry._inflight
-        return
-      }
-      entry._inflight = execute(key).finally(() => {
+      entry._abortController?.abort()
+      const controller = new AbortController()
+      entry._abortController = controller
+      const execution = execute(key, controller.signal)
+      entry._inflight = execution
+      await execution
+      if (entry._inflight === execution) {
         entry._inflight = null
-      })
-      await entry._inflight
+        entry._abortController = null
+      }
+      while (entry._inflight) await entry._inflight
     },
   }
 }

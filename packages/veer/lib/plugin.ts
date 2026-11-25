@@ -114,7 +114,7 @@ import { ErrorComponent } from 'virtual:veer/error'
 import routes, { handleHotUpdate } from 'virtual:veer/routes'
 import { middlewares, globalMiddlewares } from 'virtual:veer/middlewares-client'
 import { plugins } from 'virtual:veer/plugins-client'
-import { setHydratedPayload, createError, provideError, deserializeError, provideRuntimeConfig, readHydrationPayload, EMPTY, type RuntimeConfig, createVeerApp, runPlugins, runWithVeerApp, createVeerState } from '@devlusoft/veer/runtime'
+import { setHydratedPayload, endHydration, createError, provideError, deserializeError, provideRuntimeConfig, readHydrationPayload, EMPTY, type RuntimeConfig, createVeerApp, runPlugins, runWithVeerApp, createVeerState } from '@devlusoft/veer/runtime'
 import ClientOnly from '@devlusoft/veer/components/client-only'
 import { VeerPage, createPageScrollBehavior } from '@devlusoft/veer'
 import { VeerLoadingIndicator } from '@devlusoft/veer'
@@ -176,6 +176,7 @@ async function main() {
       if (error.value) return
       return __veer_runMiddlewareChain(to, from)
     }
+    endHydration()
     if (error.value) {
       error.value = null
       return

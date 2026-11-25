@@ -7,9 +7,13 @@ export type AcquireAsyncDataEntry<T> =
   | { status: 'created'; entry: AsyncDataEntry<T> }
   | { status: 'shared'; entry: AsyncDataEntry<T> }
 
+export type ReleaseAsyncDataEntry =
+  | { status: 'retained' }
+  | { status: 'dropped' }
+
 export interface AsyncDataRegistry {
   acquire<T>(key: string, create: () => NewAsyncDataEntry<T>): AcquireAsyncDataEntry<T>
-  release<T>(key: string, entry: AsyncDataEntry<T>): void
+  release<T>(key: string, entry: AsyncDataEntry<T>): ReleaseAsyncDataEntry
 }
 
 function entriesOf(app: VeerApp | null): Map<string, AsyncDataEntry> {
@@ -37,8 +41,12 @@ export function createAsyncDataRegistry(app: VeerApp | null): AsyncDataRegistry 
         entry
       }
     },
-    release<T>(key: string, entry: AsyncDataEntry<T>): void {
-      if (entries.get(key) === entry) entry._deps -= 1
-    }
+    release<T>(key: string, entry: AsyncDataEntry<T>): ReleaseAsyncDataEntry {
+      if (entries.get(key) !== entry) return {status: 'retained'}
+      entry._deps -= 1
+      if (entry._deps > 0) return {status: 'retained'}
+      entries.delete(key)
+      return {status: 'dropped'}
+    },
   }
 }

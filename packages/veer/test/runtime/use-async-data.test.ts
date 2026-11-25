@@ -1,6 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {createSSRApp, defineComponent, effectScope, nextTick, ref, type Ref} from 'vue'
 import {createVeerApp, createVeerState} from '../../lib'
+import {endHydration} from '../../lib/runtime'
 import type {VeerSSRContext} from '../../lib/types/ssr-context'
 import {
     setHydratedPayload,
@@ -15,6 +16,7 @@ function setupServerContext() {
         modules: new Set<string>(),
         payload: {},
         pending: new Map(),
+        runtimeConfig: {public: {}},
         async awaitAll() {
             if (this.pending.size === 0) return
             await Promise.allSettled(this.pending.values())
@@ -277,13 +279,22 @@ describe('useAsyncData (client)', () => {
         expect(data.value).toBe('from-server')
         expect(handler).not.toHaveBeenCalled()
     })
+
+    it('runs the handler for a key from the payload once hydration has ended', async () => {
+        setHydratedPayload({fromServer: {already: 'there'}})
+        endHydration()
+        const handler = vi.fn().mockResolvedValue({fresh: true})
+
+        const {data} = useAsyncData<{ fresh: boolean }>('fromServer', handler)
+
+        await vi.waitFor(() => {
+            expect(data.value).toEqual({fresh: true})
+        })
+        expect(handler).toHaveBeenCalledTimes(1)
+    })
 })
 
 describe('useAsyncData (reactive key + watch)', () => {
-    // Client-side watcher tests need a Vue effect scope to register the
-    // watchers and to exercise cleanup via onScopeDispose. We also stub
-    // `window` so useAsyncData takes the client code path (the same trick
-    // the 'client' describe block above uses).
     let scope: ReturnType<typeof effectScope>
 
     beforeEach(() => {
@@ -478,8 +489,6 @@ describe('useAsyncData (reactive key + watch)', () => {
         await vi.waitFor(() => {
             expect(data.value).toBe('b')
         })
-        // The key watcher (sync) fires first and re-fetches; the deps watcher
-        // is gated on `keyChanging` and must skip. So count goes 1 -> 2.
         expect(count).toBe(2)
     })
 
@@ -501,7 +510,6 @@ describe('useAsyncData (reactive key + watch)', () => {
         source.value = 99
         await nextTick()
         await nextTick()
-        // After dispose the watcher should not have re-run the handler.
         expect(handler).toHaveBeenCalledTimes(1)
     })
 
@@ -519,6 +527,53 @@ describe('useAsyncData (reactive key + watch)', () => {
         await nextTick()
         await nextTick()
         expect(handler).toHaveBeenCalledTimes(1)
+    })
+
+    function handlerPerKey(key: Ref<string>) {
+        const requests = new Map<string, { signal: AbortSignal; resolve: (value: string) => void }>()
+        const handler = vi.fn((_veerApp: unknown, {signal}: { signal: AbortSignal }) => {
+            const requestedKey = key.value
+            return new Promise<string>((resolve) => {
+                requests.set(requestedKey, {signal, resolve})
+            })
+        })
+        return {handler, requests}
+    }
+
+    it('shows the data of the current key after switching back to a previous one', async () => {
+        const key = ref('1')
+        const handler = vi.fn(async () => `product-${key.value}`)
+        const {data} = inScope(() => useAsyncData<string>(key, handler)) as ReturnType<typeof useAsyncData<string>>
+
+        await vi.waitFor(() => expect(data.value).toBe('product-1'))
+        key.value = '2'
+        await vi.waitFor(() => expect(data.value).toBe('product-2'))
+        key.value = '1'
+        await vi.waitFor(() => expect(data.value).toBe('product-1'))
+    })
+
+    it('shows the data of the new key when the key changes while a request is in flight', async () => {
+        const key = ref('1')
+        const {handler, requests} = handlerPerKey(key)
+        const {data} = inScope(() => useAsyncData<string>(key, handler)) as ReturnType<typeof useAsyncData<string>>
+
+        key.value = '2'
+        requests.get('2')?.resolve('product-2')
+        requests.get('1')?.resolve('product-1')
+
+        await vi.waitFor(() => expect(data.value).toBe('product-2'))
+        expect(handler).toHaveBeenCalledTimes(2)
+    })
+
+    it('aborts the request of the previous key when the key changes', () => {
+        const key = ref('1')
+        const {handler, requests} = handlerPerKey(key)
+        inScope(() => useAsyncData<string>(key, handler))
+
+        key.value = '2'
+
+        expect(requests.get('1')?.signal.aborted).toBe(true)
+        expect(requests.get('2')?.signal.aborted).toBe(false)
     })
 })
 
@@ -560,18 +615,21 @@ describe('useAsyncData (deduplication)', () => {
             modules: new Set<string>(),
             payload: {},
             pending: new Map(),
+            runtimeConfig: {public: {}},
             async awaitAll() {
                 if (this.pending.size === 0) return
                 await Promise.allSettled(this.pending.values())
             },
         }
-        const veerApp = createVeerApp({
+
+        createVeerApp({
             vueApp: app,
             router: {} as any,
             config: {public: {}},
             ssrContext,
             state: createVeerState(),
         })
+
         const handler = vi.fn().mockResolvedValue({items: []})
 
         await app.runWithContext(async () => {
@@ -595,6 +653,7 @@ describe('useAsyncData (deduplication)', () => {
             modules: new Set<string>(),
             payload: {},
             pending: new Map(),
+            runtimeConfig: {public: {}},
             async awaitAll() {
                 if (this.pending.size === 0) return
                 await Promise.allSettled(this.pending.values())
@@ -622,7 +681,7 @@ describe('useAsyncData (deduplication)', () => {
         warnSpy.mockRestore()
     })
 
-    it('concurrent refresh() calls converge to a single fetch', async () => {
+    it('concurrent refresh() calls keep only the last result', async () => {
         let invocations = 0
         const handler = vi.fn(async () => {
             invocations += 1
@@ -653,11 +712,37 @@ describe('useAsyncData (deduplication)', () => {
 
         await Promise.all([result1.refresh(), result2.refresh()])
 
-        expect(handler).toHaveBeenCalledTimes(1)
+        expect(handler).toHaveBeenCalledTimes(2)
+        expect(result1.data.value).toBe('v-2')
         expect(result1.data.value).toBe(result2.data.value)
     })
 
-    it('reuses the same entry across consumer mount/unmount cycles', async () => {
+    it('shares one request between two consumers mounted with the same key', async () => {
+        const app = createSSRApp(defineComponent({render: () => null}))
+        createVeerApp({
+            vueApp: app,
+            router: {} as any,
+            config: {public: {}},
+            ssrContext: undefined as unknown as VeerSSRContext,
+            state: createVeerState(),
+        })
+        const handler = vi.fn().mockResolvedValue('ok')
+
+        let first!: { data: Ref<string | null> }
+        let second!: { data: Ref<string | null> }
+        app.runWithContext(() => {
+            first = useAsyncData<string>('mounted-twice', handler) as ReturnType<typeof useAsyncData<string>>
+            second = useAsyncData<string>('mounted-twice', handler) as ReturnType<typeof useAsyncData<string>>
+        })
+
+        await vi.waitFor(() => {
+            expect(first.data.value).toBe('ok')
+        })
+        expect(second.data.value).toBe('ok')
+        expect(handler).toHaveBeenCalledTimes(1)
+    })
+
+    it('runs the handler again when a consumer mounts after the last one unmounted', async () => {
         const app = createSSRApp(defineComponent({ render: () => null }))
         createVeerApp({
             vueApp: app,
@@ -690,8 +775,10 @@ describe('useAsyncData (deduplication)', () => {
             })
         })
 
-        expect(handler).toHaveBeenCalledTimes(callsAfterMount)
-        expect(second.data.value).toBe('ok')
+        await vi.waitFor(() => {
+            expect(second.data.value).toBe('ok')
+        })
+        expect(handler).toHaveBeenCalledTimes(callsAfterMount + 1)
         re.stop()
     })
 })
@@ -756,7 +843,8 @@ describe('useAsyncData (await)', () => {
 
         expect(handler).toHaveBeenCalledTimes(1)
         expect(second.data.value).toBe('cached')
-        expect(second.data).toBe(first.data)
+        first.data.value = 'edited'
+        expect(second.data.value).toBe('edited')
     })
 
     it('waits for an in-flight cached request without starting another handler', async () => {
@@ -823,5 +911,75 @@ describe('useAsyncData (await)', () => {
             expect(error.value).toBeNull()
             expect(handler).toHaveBeenCalledTimes(1)
         })
+    })
+})
+
+describe('useAsyncData (abort)', () => {
+    beforeEach(() => {
+        vi.stubGlobal('window', {})
+        setHydratedPayload({})
+    })
+
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        setHydratedPayload({})
+    })
+
+    function deferredHandler() {
+        const calls: Array<{ signal: AbortSignal; resolve: (value: string) => void; reject: (error: Error) => void }> = []
+        const handler = vi.fn((_veerApp: unknown, {signal}: { signal: AbortSignal }) =>
+          new Promise<string>((resolve, reject) => {
+              calls.push({signal, resolve, reject})
+          }))
+        return {handler, calls}
+    }
+
+    const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    it('aborts the signal of the running execution when a new one starts', () => {
+        const {handler, calls} = deferredHandler()
+        const {refresh} = useAsyncData<string>('restarted', handler)
+
+        void refresh()
+
+        expect(calls[0]?.signal.aborted).toBe(true)
+        expect(calls[1]?.signal.aborted).toBe(false)
+    })
+
+    it('never writes the result of an aborted execution', async () => {
+        const {handler, calls} = deferredHandler()
+        const {data, refresh} = useAsyncData<string>('stale-result', handler)
+        const refreshing = refresh()
+
+        calls[1]?.resolve('fresh')
+        await refreshing
+        calls[0]?.resolve('stale')
+        await flushPromises()
+
+        expect(data.value).toBe('fresh')
+    })
+
+    it('never writes the error of an aborted execution', async () => {
+        const {handler, calls} = deferredHandler()
+        const {data, error, refresh} = useAsyncData<string>('stale-error', handler)
+        const refreshing = refresh()
+
+        calls[1]?.resolve('fresh')
+        await refreshing
+        calls[0]?.reject(new Error('stale'))
+        await flushPromises()
+
+        expect(error.value).toBeNull()
+        expect(data.value).toBe('fresh')
+    })
+
+    it('aborts the running execution when its last consumer unmounts', () => {
+        const {handler, calls} = deferredHandler()
+        const scope = effectScope()
+        scope.run(() => useAsyncData<string>('unmounted', handler))
+
+        scope.stop()
+
+        expect(calls[0]?.signal.aborted).toBe(true)
     })
 })

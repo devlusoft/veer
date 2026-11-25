@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, defineComponent, nextTick, ref } from 'vue'
+import { createSSRApp, defineComponent, effectScope, nextTick, ref } from 'vue'
 
 import { useFetch } from '../../lib'
 import { createVeerApp, createVeerState, provideBaseURL } from '../../lib'
@@ -26,6 +26,7 @@ function setupServerContext(opts: { withRequest?: boolean; requestUrl?: string }
     modules: new Set<string>(),
     payload: {},
     pending: new Map(),
+    runtimeConfig: { public: {} },
     async awaitAll() {
       if (this.pending.size === 0) return
       await Promise.allSettled(this.pending.values())
@@ -74,7 +75,7 @@ describe('useFetch', () => {
       expect(result.error).toBeDefined()
       expect(result.status).toBeDefined()
       expect(result.refresh).toBeInstanceOf(Function)
-      expect(result.then).toBeUndefined()
+      expect('then' in result).toBe(false)
       expect(result.statusCode).toBeDefined()
       expect(result.statusCode.value).toBeNull()
     })
@@ -320,6 +321,44 @@ describe('useFetch', () => {
       expect(data.value).toEqual({ hydrated: true })
       expect(status.value).toBe('success')
       expect(fetchMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('remount', () => {
+    beforeEach(() => {
+      vi.stubGlobal('window', {})
+      setHydratedPayload({})
+    })
+
+    it('fetches the current url when a consumer with a fixed key mounts again', async () => {
+      const app = createSSRApp(defineComponent({ render: () => null }))
+      createVeerApp({
+        vueApp: app,
+        router: {} as any,
+        config: { public: {} },
+        ssrContext: undefined as unknown as VeerSSRContext,
+        state: createVeerState(),
+      })
+      fetchMock.mockImplementation(async (input: unknown) =>
+        jsonResponse({ url: input instanceof Request ? input.url : String(input) }))
+      const id = ref(1)
+      const url = () => `/api/products/${id.value}`
+
+      const first = effectScope()
+      app.runWithContext(() => first.run(() => useFetch(url, { key: 'product' })))
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      first.stop()
+
+      id.value = 2
+      const second = effectScope()
+      let result!: ReturnType<typeof useFetch<{ url: string }>>
+      app.runWithContext(() => second.run(() => {
+        result = useFetch<{ url: string }>(url, { key: 'product' })
+      }))
+
+      await vi.waitFor(() => expect(result.data.value?.url).toContain('/api/products/2'))
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      second.stop()
     })
   })
 
