@@ -26,6 +26,7 @@ function setupServerContext(opts: { withRequest?: boolean; requestUrl?: string }
     modules: new Set<string>(),
     payload: {},
     pending: new Map(),
+    runtimeConfig: { public: {} },
     async awaitAll() {
       if (this.pending.size === 0) return
       await Promise.allSettled(this.pending.values())
@@ -74,7 +75,7 @@ describe('useFetch', () => {
       expect(result.error).toBeDefined()
       expect(result.status).toBeDefined()
       expect(result.refresh).toBeInstanceOf(Function)
-      expect(result.then).toBeUndefined()
+      expect('then' in result).toBe(false)
       expect(result.statusCode).toBeDefined()
       expect(result.statusCode.value).toBeNull()
     })
