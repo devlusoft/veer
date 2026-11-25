@@ -17,6 +17,7 @@ import {
 import { getSSRContext, tryUseVeerApp } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
 import { type HydratedAsyncData, readHydratedAsyncData, serializeAsyncDataError } from './async-data-payload'
+import { createAsyncDataRegistry } from './async-data-registry'
 
 export type AsyncDataKey = string | Ref<string> | (() => string)
 
@@ -69,12 +70,6 @@ export interface AsyncDataEntry<T = unknown> {
   _retryDelay: number
   _deps: number
   _inflight: Promise<void> | null
-}
-
-function getAsyncDataCache(app: VeerApp | null): Map<string, AsyncDataEntry> {
-  if (!app) return new Map()
-  if (!app._asyncData) app._asyncData = new Map()
-  return app._asyncData as Map<string, AsyncDataEntry>
 }
 
 function hashOptions(opts: UseAsyncDataOptions<unknown>): string {
@@ -149,34 +144,26 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
 
   const keyRef = computed(() => toValue(key))
   const resolvedKey = String(keyRef.value)
-  const veerApp = tryUseVeerApp()
-  const cache = getAsyncDataCache(veerApp)
-  const existing = cache.get(resolvedKey) as AsyncDataEntry<T> | undefined
 
-  let entry: AsyncDataEntry<T>
-
-  if (existing) {
-    warnIfIncompatible(existing as AsyncDataEntry<unknown>, options, handler as AsyncDataHandler<unknown>, resolvedKey)
-    existing._deps += 1
-    entry = existing as AsyncDataEntry<T>
-  } else {
-    entry = {
-      key: resolvedKey,
-      data: shallowRef<T | null>(null) as Ref<T | null>,
-      pending: ref(!!options.lazy),
-      error: shallowRef<Error | null>(null),
-      status: ref<Status>('idle'),
-      _handlerSource: handler.toString(),
-      _defaultSource: options.default ? options.default.toString() : '',
-      _optionsHash: hashOptions(options),
-      _server: options.server !== false,
-      _lazy: !!options.lazy,
-      _retries: Math.max(0, options.retryCount ?? 0),
-      _retryDelay: Math.max(0, options.retryDelayMs ?? 0),
-      _deps: 1,
-      _inflight: null,
-    }
-    cache.set(resolvedKey, entry as unknown as AsyncDataEntry)
+  const registry = createAsyncDataRegistry(tryUseVeerApp())
+  const acquired = registry.acquire<T>(resolvedKey, () => ({
+    key: resolvedKey,
+    data: shallowRef<T | null>(null) as Ref<T | null>,
+    pending: ref(!!options.lazy),
+    error: shallowRef<Error | null>(null),
+    status: ref<Status>('idle'),
+    _handlerSource: handler.toString(),
+    _defaultSource: options.default ? options.default.toString() : '',
+    _optionsHash: hashOptions(options),
+    _server: options.server !== false,
+    _lazy: !!options.lazy,
+    _retries: Math.max(0, options.retryCount ?? 0),
+    _retryDelay: Math.max(0, options.retryDelayMs ?? 0),
+    _inflight: null,
+  }))
+  const entry = acquired.entry
+  if (acquired.status === 'shared') {
+    warnIfIncompatible(entry as AsyncDataEntry<unknown>, options, handler as AsyncDataHandler<unknown>, resolvedKey)
   }
 
   const runEntry = async (useKey: string): Promise<void> => {
@@ -216,7 +203,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
   }
 
   if (isClient) {
-    if (existing) {
+    if (acquired.status === 'shared') {
       if (entry._deps === 1) {
         onMounted(() => {
           if (entry.status.value === 'idle') {
@@ -242,12 +229,12 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     }
   }
 
-  if (entry.data.value === null && options.default && !existing) {
+  if (entry.data.value === null && options.default && acquired.status === 'created') {
     const d = options.default()
     entry.data.value = (isRef(d) ? d.value : d) as T
   }
 
-  if (entry.status.value === 'idle' && runOnServer && !existing) {
+  if (entry.status.value === 'idle' && runOnServer && acquired.status === 'created') {
     if (entry._lazy) {
       const handlerPromise = runEntry(resolvedKey)
       if (ssrContext) ssrContext.pending.set(resolvedKey, handlerPromise)
@@ -262,7 +249,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     }
   }
 
-  if (entry.status.value === 'idle' && isClient && !entry._lazy && !existing) {
+  if (entry.status.value === 'idle' && isClient && !entry._lazy && acquired.status === 'created') {
     entry.pending.value = true
     entry.status.value = 'pending'
     if (ssrContext) {
@@ -312,10 +299,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
       onScopeDispose(() => {
         stopKeyWatch?.()
         stopDepsWatch?.()
-        const cached = cache.get(resolvedKey) as AsyncDataEntry<T> | undefined
-        if (cached && cached === entry) {
-          cached._deps -= 1
-        }
+        registry.release(resolvedKey, entry)
       })
     }
   }
