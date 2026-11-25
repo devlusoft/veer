@@ -6,6 +6,7 @@ import { printDevBanner } from './utils/banner'
 import { logInfo } from './utils/logger'
 
 export async function runStart(cwd: string): Promise<void> {
+  process.env.NODE_ENV = process.env.NODE_ENV || 'production'
   await setupRuntimeEnv(cwd)
   const config = await loadVeerConfig({ cwd })
   process.env.VEER_API_PREFIX = config.server.apiPrefix
@@ -20,7 +21,6 @@ export async function runStart(cwd: string): Promise<void> {
 
   logInfo('starting production server...')
   process.env.PORT = String(port)
-  process.env.NODE_ENV = 'production'
   process.env.VEER_DEV = 'false'
   process.env.VEER_BASE_URL = process.env.VEER_BASE_URL ?? `http://localhost:${port}`
 

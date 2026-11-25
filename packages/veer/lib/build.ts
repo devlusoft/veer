@@ -36,6 +36,7 @@ async function prerenderRoutes(cwd: string): Promise<void> {
 }
 
 export async function runBuild(cwd: string): Promise<void> {
+  process.env.NODE_ENV = process.env.NODE_ENV || 'production'
   const startedAt = Date.now()
   prepareVeerLayoutComponent(cwd)
   const config = await loadVeerConfig({ cwd })
