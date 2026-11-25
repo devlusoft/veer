@@ -8,14 +8,15 @@ import {
   onScopeDispose,
   onServerPrefetch,
   ref,
+  type Ref,
   shallowRef,
   toValue,
   watch,
-  type Ref,
   type WatchSource,
 } from 'vue'
 import { getSSRContext, tryUseVeerApp } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
+import { type HydratedAsyncData, readHydratedAsyncData, serializeAsyncDataError } from './async-data-payload'
 
 export type AsyncDataKey = string | Ref<string> | (() => string)
 
@@ -52,17 +53,6 @@ function createAsyncData<T>(value: UseAsyncDataReturn<T>, pending: Promise<void>
 }
 
 type Status = UseAsyncDataReturn<unknown>['status']['value']
-
-let hydratedPayload: Record<string, unknown> | null = null
-
-export function setHydratedPayload(payload: Record<string, unknown | null>): void {
-  hydratedPayload = payload
-}
-
-export function readHydratedKey<T = unknown>(key: string): T | undefined {
-  if (!hydratedPayload || !(key in hydratedPayload)) return undefined
-  return hydratedPayload[key] as T
-}
 
 export interface AsyncDataEntry<T = unknown> {
   key: string
@@ -131,6 +121,24 @@ async function runWithRetries<T>(
   throw lastError
 }
 
+function applyHydratedAsyncData<T>(entry: AsyncDataEntry<T>, hydrated: HydratedAsyncData<T>): void {
+  switch (hydrated.status) {
+    case 'missing':
+      return
+    case 'success':
+      entry.data.value = hydrated.data
+      entry.status.value = 'success'
+      return
+    case 'error':
+      entry.error.value = hydrated.error
+      entry.status.value = 'error'
+      return
+    default: {
+      return hydrated
+    }
+  }
+}
+
 export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>, options: UseAsyncDataOptions<T> = {}): AsyncData<T> {
   if (!key) throw new Error('[veer] useAsyncData: `key` is required')
 
@@ -194,7 +202,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
       } catch (err) {
         entry.error.value = err instanceof Error ? err : new Error(String(err))
         entry.status.value = 'error'
-        if (ctx) ctx.payload[useKey] = {__error: entry.error.value.message}
+        if (ctx) ctx.payload[useKey] = serializeAsyncDataError(entry.error.value)
       } finally {
         entry.pending.value = false
         if (ctx) ctx.pending.delete(useKey)
@@ -220,32 +228,17 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
       }
     } else if (entry._lazy) {
       onMounted(() => {
-        const hydrated = readHydratedKey<T>(resolvedKey)
-        if (hydrated !== undefined) {
-          if (hydrated !== null && typeof hydrated === 'object' && '__error' in hydrated) {
-            entry.error.value = new Error(String((hydrated as { __error: unknown }).__error))
-            entry.status.value = 'error'
-          } else {
-            entry.data.value = hydrated
-            entry.status.value = 'success'
-          }
-          entry.pending.value = false
-        } else {
+        const hydrated = readHydratedAsyncData<T>(resolvedKey)
+        if (hydrated.status === 'missing') {
           entry.status.value = 'pending'
           void runEntry(resolvedKey)
+          return
         }
+        applyHydratedAsyncData(entry, hydrated)
+        entry.pending.value = false
       })
     } else {
-      const hydrated = readHydratedKey<T>(resolvedKey)
-      if (hydrated !== undefined) {
-        if (hydrated !== null && typeof hydrated === 'object' && '__error' in hydrated) {
-          entry.error.value = new Error(String((hydrated as { __error: unknown }).__error))
-          entry.status.value = 'error'
-        } else {
-          entry.data.value = hydrated
-          entry.status.value = 'success'
-        }
-      }
+      applyHydratedAsyncData(entry, readHydratedAsyncData<T>(resolvedKey))
     }
   }
 

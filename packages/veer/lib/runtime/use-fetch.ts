@@ -16,10 +16,10 @@ import {
 } from 'ofetch'
 import {
   useAsyncData,
-  readHydratedKey,
   type UseAsyncDataOptions,
   type UseAsyncDataReturn,
 } from './use-async-data'
+import { readHydratedKey } from './async-data-payload'
 import { resolveBaseURL } from './fetch'
 import { getSSRContext } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
