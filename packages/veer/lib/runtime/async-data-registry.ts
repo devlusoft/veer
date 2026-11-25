@@ -38,7 +38,9 @@ export function createAsyncDataRegistry(app: VeerApp | null): AsyncDataRegistry 
       }
     },
     release<T>(key: string, entry: AsyncDataEntry<T>): void {
-      if (entries.get(key) === entry) entry._deps -= 1
+      if (entries.get(key) !== entry) return
+      entry._deps -= 1
+      if (entry._deps === 0) entries.delete(key)
     }
   }
 }

@@ -71,6 +71,7 @@ export interface AsyncDataEntry<T = unknown> {
   _retryDelay: number
   _deps: number
   _inflight: Promise<void> | null
+  _abortController: AbortController | null
 }
 
 function hashOptions(opts: UseAsyncDataOptions<unknown>): string {
@@ -140,6 +141,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     _retries: Math.max(0, options.retryCount ?? 0),
     _retryDelay: Math.max(0, options.retryDelayMs ?? 0),
     _inflight: null,
+    _abortController: null,
   }))
   const entry = acquired.entry
   if (acquired.status === 'shared') {
@@ -148,18 +150,8 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
 
   const runner = createAsyncDataRunner(entry, handler, ssrContext)
 
-  if (isClient) {
-    if (acquired.status === 'shared') {
-      if (entry._deps === 1) {
-        onMounted(() => {
-          if (entry.status.value === 'idle') {
-            entry.pending.value = true
-            entry.status.value = 'pending'
-            void runner.run(resolvedKey)
-          }
-        })
-      }
-    } else if (entry._lazy) {
+  if (isClient && acquired.status === 'created') {
+    if (entry._lazy) {
       onMounted(() => {
         const hydrated = readHydratedAsyncData<T>(resolvedKey)
         if (hydrated.status === 'missing') {

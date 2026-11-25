@@ -13,6 +13,10 @@ export function setHydratedPayload(payload: Record<string, unknown | null>): voi
   hydratedPayload = payload
 }
 
+export function endHydration(): void {
+  hydratedPayload = null
+}
+
 export function readHydratedKey<T = unknown>(key: string): T | undefined {
   if (!hydratedPayload || !(key in hydratedPayload)) return undefined
   return hydratedPayload[key] as T
