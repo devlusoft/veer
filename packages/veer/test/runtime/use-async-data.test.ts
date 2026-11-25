@@ -1121,5 +1121,21 @@ describe('useAsyncData (navigation)', () => {
         await vi.waitFor(() => expect(next.result.status.value).toBe('error'))
         expect(failing).toHaveBeenCalledTimes(1)
     })
+
+    it('does not warn about the previous page handler when two consumers of the new page share the key', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const {mount, navigate} = setupNavigation()
+        const previous = mount<string>('detail', async () => 'before')
+        await vi.waitFor(() => expect(previous.result.data.value).toBe('before'))
+
+        navigate()
+        const handler = async () => 'after'
+        const page = mount<string>('detail', handler)
+        mount<string>('detail', handler)
+        await vi.waitFor(() => expect(page.result.data.value).toBe('after'))
+
+        expect(warnSpy).not.toHaveBeenCalled()
+        warnSpy.mockRestore()
+    })
 })
 

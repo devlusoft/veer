@@ -91,14 +91,23 @@ function hashOptions(opts: UseAsyncDataOptions<unknown>): string {
   })
 }
 
+type AsyncDataConsumerSignature = Pick<AsyncDataEntry, '_handlerSource' | '_defaultSource' | '_optionsHash'>
+
+function toConsumerSignature(handler: AsyncDataHandler<unknown>, options: UseAsyncDataOptions<unknown>): AsyncDataConsumerSignature {
+  return {
+    _handlerSource: handler.toString(),
+    _defaultSource: options.default ? options.default.toString() : '',
+    _optionsHash: hashOptions(options),
+  }
+}
+
 function warnIfIncompatible(entry: AsyncDataEntry, options: UseAsyncDataOptions<unknown>, handler: AsyncDataHandler<unknown>, key: string): void {
   if (import.meta.env?.DEV || import.meta.env?.MODE !== 'production') {
-    const handlerSource = handler.toString()
-    const defaultSource = options.default ? options.default.toString() : ''
+    const signature = toConsumerSignature(handler, options)
     const warnings: string[] = []
-    if (handlerSource !== entry._handlerSource) warnings.push('different `handler`')
-    if (defaultSource !== entry._defaultSource) warnings.push('different `default` value')
-    if (hashOptions(options) !== entry._optionsHash) warnings.push('different options (server/lazy/retry*)')
+    if (signature._handlerSource !== entry._handlerSource) warnings.push('different `handler`')
+    if (signature._defaultSource !== entry._defaultSource) warnings.push('different `default` value')
+    if (signature._optionsHash !== entry._optionsHash) warnings.push('different options (server/lazy/retry*)')
     if (warnings.length) {
       console.warn(`[veer] useAsyncData("${key}") was called with ${warnings.join(', ')} than the first consumer. Reusing existing entry — if this is intentional, ignore; otherwise prefer a unique key or align the call sites.`)
     }
@@ -156,9 +165,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     pending: ref(!!options.lazy),
     error: shallowRef<Error | null>(null),
     status: ref<Status>('idle'),
-    _handlerSource: handler.toString(),
-    _defaultSource: options.default ? options.default.toString() : '',
-    _optionsHash: hashOptions(options),
+    ...toConsumerSignature(handler, options),
     _server: options.server !== false,
     _lazy: !!options.lazy,
     _inflight: null,
@@ -222,6 +229,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
   }
 
   if (isClient && acquired.status === 'stale') {
+    Object.assign(entry, toConsumerSignature(handler, options))
     entry.pending.value = true
     entry.status.value = 'pending'
     if (options.lazy) {
