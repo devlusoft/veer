@@ -2,6 +2,7 @@ import { defineComponent, h, onUnmounted, Suspense } from 'vue'
 import { type RouteLocationNormalizedLoaded, RouterView } from 'vue-router'
 import { useVeerApp } from '../plugins/runtime'
 import { markCurrentNavigationResolved, resetCurrentNavigationResolved } from '../runtime/page-loading'
+import { getPageKey } from '../runtime/page-key'
 
 export default defineComponent({
   name: 'VeerPage',
@@ -33,7 +34,7 @@ export default defineComponent({
             void veerApp.callHook('page:loading:end')
           }
         }, {
-          default: () => h(routeProps.Component)
+          default: () => h(routeProps.Component, { key: getPageKey(veerApp.router, routeProps.route) })
         })
       }
     })
