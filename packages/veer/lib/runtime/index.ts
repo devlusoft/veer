@@ -10,7 +10,8 @@ export {
   type VeerError,
   type VeerErrorPayload,
 } from './error'
-export { useAsyncData, setHydratedPayload, readHydratedKey, type UseAsyncDataOptions, type UseAsyncDataReturn, type AsyncData, type AsyncDataHandler, type AsyncDataHandlerOptions, type AsyncDataEntry } from './use-async-data'
+export { useAsyncData, type UseAsyncDataOptions, type UseAsyncDataReturn, type AsyncData, type AsyncDataHandler, type AsyncDataHandlerOptions, type AsyncDataEntry } from './use-async-data'
+export { setHydratedPayload, readHydratedKey } from './async-data-payload'
 export {
   $fetch,
   createFetch,

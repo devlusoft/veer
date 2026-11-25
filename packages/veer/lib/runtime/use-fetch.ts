@@ -16,14 +16,13 @@ import {
 } from 'ofetch'
 import {
   useAsyncData,
-  readHydratedKey,
   type UseAsyncDataOptions,
   type UseAsyncDataReturn,
 } from './use-async-data'
+import { readHydratedKey } from './async-data-payload'
 import { resolveBaseURL } from './fetch'
-import { tryUseVeerApp } from './app-context'
+import { getSSRContext } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
-import type { VeerSSRContext } from '../types/ssr-context'
 
 const REF_OR_GETTER_OPTIONS = [
   'method',
@@ -48,13 +47,6 @@ export interface UseFetchOptions<T = any> extends FetchOptions<'json', T>, UseAs
 
 export interface UseFetchReturn<T> extends UseAsyncDataReturn<T> {
   statusCode: Ref<number | null>
-}
-
-function getSSRContext(): VeerSSRContext | undefined {
-  if (typeof window !== 'undefined') return undefined
-  const veerApp = tryUseVeerApp()
-  if (veerApp?.ssrContext) return veerApp.ssrContext as VeerSSRContext
-  return (globalThis as { __VEER_SSR_CONTEXT__?: VeerSSRContext }).__VEER_SSR_CONTEXT__
 }
 
 async function runHook<C>(hook: unknown, ctx: C): Promise<void> {

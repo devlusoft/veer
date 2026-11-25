@@ -17,3 +17,10 @@ export function tryUseVeerApp(): VeerApp | null {
   }
   return null
 }
+
+export function getSSRContext(): VeerSSRContext | undefined {
+  if (typeof window !== 'undefined') return undefined
+  const veerApp = tryUseVeerApp()
+  if (veerApp?.ssrContext) return veerApp.ssrContext as VeerSSRContext
+  return (globalThis as { __VEER_SSR_CONTEXT__?: VeerSSRContext }).__VEER_SSR_CONTEXT__
+}
