@@ -12,6 +12,7 @@ export {
 } from './error'
 export { useAsyncData, type UseAsyncDataOptions, type UseAsyncDataReturn, type AsyncData, type AsyncDataHandler, type AsyncDataHandlerOptions, type AsyncDataEntry } from './use-async-data'
 export { setHydratedPayload, endHydration, readHydratedKey } from './async-data-payload'
+export { advanceAsyncDataNavigation } from './async-data-registry'
 export {
   $fetch,
   createFetch,

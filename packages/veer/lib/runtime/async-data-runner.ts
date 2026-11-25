@@ -8,6 +8,11 @@ export interface AsyncDataRunner {
   run(key: string): Promise<void>
 }
 
+export interface AsyncDataRetryPolicy {
+  count: number
+  delayMs: number
+}
+
 async function runWithRetries<T>(
   handler: AsyncDataHandler<T>,
   veerApp: VeerApp,
@@ -34,14 +39,15 @@ async function runWithRetries<T>(
 export function createAsyncDataRunner<T>(
   entry: AsyncDataEntry<T>,
   handler: AsyncDataHandler<T>,
-  ssrContext: VeerSSRContext | undefined
+  ssrContext: VeerSSRContext | undefined,
+  retry: AsyncDataRetryPolicy
 ): AsyncDataRunner {
   const isClient = typeof window !== 'undefined'
 
   async function execute(key: string, signal: AbortSignal): Promise<void> {
     const execVeerApp = !isClient ? tryUseVeerApp() : null
     const exec = (): Promise<T> => {
-      const callHandler = () => runWithRetries<T>(handler, execVeerApp as VeerApp, signal, entry._retries, entry._retryDelay)
+      const callHandler = () => runWithRetries<T>(handler, execVeerApp as VeerApp, signal, retry.count, retry.delayMs)
       return execVeerApp && !isClient ? execVeerApp.vueApp.runWithContext(callHandler) : callHandler()
     }
     entry.error.value = null

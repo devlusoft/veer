@@ -18,7 +18,7 @@ import { getSSRContext, tryUseVeerApp } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
 import { type HydratedAsyncData, readHydratedAsyncData } from './async-data-payload'
 import { createAsyncDataRegistry, type NewAsyncDataEntry } from './async-data-registry'
-import { createAsyncDataRunner, type AsyncDataRunner } from './async-data-runner'
+import { createAsyncDataRunner, type AsyncDataRetryPolicy, type AsyncDataRunner } from './async-data-runner'
 
 export type AsyncDataKey = string | Ref<string> | (() => string)
 
@@ -67,30 +67,47 @@ export interface AsyncDataEntry<T = unknown> {
   _optionsHash: string
   _server: boolean
   _lazy: boolean
-  _retries: number
-  _retryDelay: number
   _deps: number
+  _navigation: number
   _inflight: Promise<void> | null
   _abortController: AbortController | null
 }
 
+function toRetryPolicy(options: UseAsyncDataOptions<unknown>): AsyncDataRetryPolicy {
+  return {
+    count: Math.max(0, options.retryCount ?? 0),
+    delayMs: Math.max(0, options.retryDelayMs ?? 0),
+  }
+}
+
 function hashOptions(opts: UseAsyncDataOptions<unknown>): string {
+  const retry = toRetryPolicy(opts)
+
   return JSON.stringify({
     server: opts.server !== false,
     lazy: !!opts.lazy,
-    retryCount: Math.max(0, opts.retryCount ?? 0),
-    retryDelayMs: Math.max(0, opts.retryDelayMs ?? 0),
+    retryCount: retry.count,
+    retryDelayMs: retry.delayMs,
   })
+}
+
+type AsyncDataConsumerSignature = Pick<AsyncDataEntry, '_handlerSource' | '_defaultSource' | '_optionsHash'>
+
+function toConsumerSignature(handler: AsyncDataHandler<unknown>, options: UseAsyncDataOptions<unknown>): AsyncDataConsumerSignature {
+  return {
+    _handlerSource: handler.toString(),
+    _defaultSource: options.default ? options.default.toString() : '',
+    _optionsHash: hashOptions(options),
+  }
 }
 
 function warnIfIncompatible(entry: AsyncDataEntry, options: UseAsyncDataOptions<unknown>, handler: AsyncDataHandler<unknown>, key: string): void {
   if (import.meta.env?.DEV || import.meta.env?.MODE !== 'production') {
-    const handlerSource = handler.toString()
-    const defaultSource = options.default ? options.default.toString() : ''
+    const signature = toConsumerSignature(handler, options)
     const warnings: string[] = []
-    if (handlerSource !== entry._handlerSource) warnings.push('different `handler`')
-    if (defaultSource !== entry._defaultSource) warnings.push('different `default` value')
-    if (hashOptions(options) !== entry._optionsHash) warnings.push('different options (server/lazy/retry*)')
+    if (signature._handlerSource !== entry._handlerSource) warnings.push('different `handler`')
+    if (signature._defaultSource !== entry._defaultSource) warnings.push('different `default` value')
+    if (signature._optionsHash !== entry._optionsHash) warnings.push('different options (server/lazy/retry*)')
     if (warnings.length) {
       console.warn(`[veer] useAsyncData("${key}") was called with ${warnings.join(', ')} than the first consumer. Reusing existing entry — if this is intentional, ignore; otherwise prefer a unique key or align the call sites.`)
     }
@@ -148,13 +165,9 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     pending: ref(!!options.lazy),
     error: shallowRef<Error | null>(null),
     status: ref<Status>('idle'),
-    _handlerSource: handler.toString(),
-    _defaultSource: options.default ? options.default.toString() : '',
-    _optionsHash: hashOptions(options),
+    ...toConsumerSignature(handler, options),
     _server: options.server !== false,
     _lazy: !!options.lazy,
-    _retries: Math.max(0, options.retryCount ?? 0),
-    _retryDelay: Math.max(0, options.retryDelayMs ?? 0),
     _inflight: null,
     _abortController: null,
   })
@@ -164,7 +177,8 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     warnIfIncompatible(entry as AsyncDataEntry<unknown>, options, handler as AsyncDataHandler<unknown>, resolvedKey)
   }
 
-  const runner = createAsyncDataRunner(entry, handler, ssrContext)
+  const retry = toRetryPolicy(options)
+  const runner = createAsyncDataRunner(entry, handler, ssrContext, retry)
   const current = shallowRef<AsyncDataBinding<T>>({key: resolvedKey, entry, runner})
 
   if (isClient && acquired.status === 'created') {
@@ -214,6 +228,19 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     }
   }
 
+  if (isClient && acquired.status === 'stale') {
+    Object.assign(entry, toConsumerSignature(handler, options))
+    entry.pending.value = true
+    entry.status.value = 'pending'
+    if (options.lazy) {
+      onMounted(() => {
+        void runner.run(resolvedKey)
+      })
+    } else {
+      void runner.run(resolvedKey)
+    }
+  }
+
   if (isClient) {
     let keyChanging = false
     const hasScope = !!getCurrentScope()
@@ -230,7 +257,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
           if (released.status === 'dropped') previous.entry._abortController?.abort()
 
           const next = registry.acquire<T>(newKey, () => createEntry(newKey))
-          const nextRunner = createAsyncDataRunner(next.entry, handler, ssrContext)
+          const nextRunner = createAsyncDataRunner(next.entry, handler, ssrContext, retry)
           current.value = {key: newKey, entry: next.entry, runner: nextRunner}
           if (next.status === 'shared') return
 
