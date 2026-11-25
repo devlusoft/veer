@@ -1,5 +1,13 @@
 # @devlusoft/veer
 
+## 0.2.2
+
+### Patch Changes
+
+- f7d3002: Fix `useAsyncData` and `useFetch` showing the data of the previous page when two pages use the same key. A consumer that mounts in a new client navigation now requests its own data even if the entry already exists, consumers of the same navigation still share one request, and a consumer that stays mounted across navigations, such as a layout, sees the new data without requesting. Each request now uses the retry options of the consumer that makes it, not those of the first consumer of the entry.
+- e829f06: Fix `VeerPage` reusing the page component when only a route param changes, so `/productos/1` to `/productos/2` kept the first product. The page now has a key built from the matched route with its params substituted, so a param change remounts it, while a change in the query or the hash does not.
+- 7939d17: Fix `useAsyncData` and `useFetch` showing data from another page after client navigation. Entries are now dropped when their last consumer unmounts, the server payload is only read during hydration, a reactive key switches to its own entry, and a new run aborts the previous one and discards its result. As a result, concurrent `refresh()` calls no longer share a single request: the last one wins.
+
 ## 0.2.1
 
 ### Patch Changes
