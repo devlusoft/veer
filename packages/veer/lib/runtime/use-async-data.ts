@@ -16,8 +16,9 @@ import {
 } from 'vue'
 import { getSSRContext, tryUseVeerApp } from './app-context'
 import type { VeerApp } from '../plugins/runtime'
-import { type HydratedAsyncData, readHydratedAsyncData, serializeAsyncDataError } from './async-data-payload'
+import { type HydratedAsyncData, readHydratedAsyncData } from './async-data-payload'
 import { createAsyncDataRegistry } from './async-data-registry'
+import { createAsyncDataRunner } from './async-data-runner'
 
 export type AsyncDataKey = string | Ref<string> | (() => string)
 
@@ -95,27 +96,6 @@ function warnIfIncompatible(entry: AsyncDataEntry, options: UseAsyncDataOptions<
   }
 }
 
-async function runWithRetries<T>(
-  handler: AsyncDataHandler<T>,
-  veerApp: VeerApp,
-  signal: AbortSignal,
-  retries: number,
-  delay: number,
-): Promise<T> {
-  let lastError: unknown
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await handler(veerApp, {signal})
-    } catch (err) {
-      lastError = err
-      if (attempt < retries && delay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      }
-    }
-  }
-  throw lastError
-}
-
 function applyHydratedAsyncData<T>(entry: AsyncDataEntry<T>, hydrated: HydratedAsyncData<T>): void {
   switch (hydrated.status) {
     case 'missing':
@@ -166,41 +146,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     warnIfIncompatible(entry as AsyncDataEntry<unknown>, options, handler as AsyncDataHandler<unknown>, resolvedKey)
   }
 
-  const runEntry = async (useKey: string): Promise<void> => {
-    if (entry._inflight) {
-      await entry._inflight
-      return
-    }
-    const execVeerApp = !isClient ? tryUseVeerApp() : null
-    const ctx = ssrContext
-
-    const promise = (async () => {
-      const abortController = new AbortController()
-      const exec = (): Promise<T> => {
-        const callHandler = () => runWithRetries<T>(handler, execVeerApp as VeerApp, abortController.signal, entry._retries, entry._retryDelay)
-        return execVeerApp && !isClient ? execVeerApp.vueApp.runWithContext(callHandler) : callHandler()
-      }
-      entry.error.value = null
-      try {
-        const result = await exec()
-        entry.data.value = result
-        entry.status.value = 'success'
-        if (ctx) ctx.payload[useKey] = result
-      } catch (err) {
-        entry.error.value = err instanceof Error ? err : new Error(String(err))
-        entry.status.value = 'error'
-        if (ctx) ctx.payload[useKey] = serializeAsyncDataError(entry.error.value)
-      } finally {
-        entry.pending.value = false
-        if (ctx) ctx.pending.delete(useKey)
-      }
-    })()
-
-    entry._inflight = promise.finally(() => {
-      entry._inflight = null
-    })
-    await entry._inflight
-  }
+  const runner = createAsyncDataRunner(entry, handler, ssrContext)
 
   if (isClient) {
     if (acquired.status === 'shared') {
@@ -209,7 +155,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
           if (entry.status.value === 'idle') {
             entry.pending.value = true
             entry.status.value = 'pending'
-            void runEntry(resolvedKey)
+            void runner.run(resolvedKey)
           }
         })
       }
@@ -218,7 +164,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
         const hydrated = readHydratedAsyncData<T>(resolvedKey)
         if (hydrated.status === 'missing') {
           entry.status.value = 'pending'
-          void runEntry(resolvedKey)
+          void runner.run(resolvedKey)
           return
         }
         applyHydratedAsyncData(entry, hydrated)
@@ -236,12 +182,12 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
 
   if (entry.status.value === 'idle' && runOnServer && acquired.status === 'created') {
     if (entry._lazy) {
-      const handlerPromise = runEntry(resolvedKey)
+      const handlerPromise = runner.run(resolvedKey)
       if (ssrContext) ssrContext.pending.set(resolvedKey, handlerPromise)
     } else {
       entry.pending.value = true
       entry.status.value = 'pending'
-      const handlerPromise = runEntry(resolvedKey)
+      const handlerPromise = runner.run(resolvedKey)
       if (ssrContext) ssrContext.pending.set(resolvedKey, handlerPromise)
       if (getCurrentInstance()) {
         onServerPrefetch(() => handlerPromise)
@@ -253,9 +199,9 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
     entry.pending.value = true
     entry.status.value = 'pending'
     if (ssrContext) {
-      ssrContext.pending.set(resolvedKey, runEntry(resolvedKey))
+      ssrContext.pending.set(resolvedKey, runner.run(resolvedKey))
     } else {
-      void runEntry(resolvedKey)
+      void runner.run(resolvedKey)
     }
   }
 
@@ -274,7 +220,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
           entry.error.value = null
           entry.pending.value = true
           entry.status.value = 'pending'
-          await runEntry(newKey)
+          await runner.run(newKey)
         } finally {
           await nextTick()
           keyChanging = false
@@ -288,9 +234,9 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
         entry.pending.value = true
         entry.status.value = 'pending'
         if (ssrContext) {
-          ssrContext.pending.set(resolvedKey, runEntry(resolvedKey))
+          ssrContext.pending.set(resolvedKey, runner.run(resolvedKey))
         } else {
-          void runEntry(resolvedKey)
+          void runner.run(resolvedKey)
         }
       })
     }
@@ -305,7 +251,7 @@ export function useAsyncData<T>(key: AsyncDataKey, handler: AsyncDataHandler<T>,
   }
 
   const refresh = async (): Promise<void> => {
-    await runEntry(resolvedKey)
+    await runner.run(resolvedKey)
   }
 
   return createAsyncData({
