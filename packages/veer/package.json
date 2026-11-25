@@ -51,8 +51,8 @@
       "default": "./dist/runtime/server-head.js"
     },
     "./setup": {
-      "types": "./dist/veer-setup.d.ts",
-      "default": "./dist/veer-setup.js"
+      "types": "./dist/setup.d.ts",
+      "default": "./dist/setup.js"
     },
     "./h3": {
       "types": "./dist/h3.d.ts",
