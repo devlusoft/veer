@@ -15,6 +15,7 @@ function setupServerContext() {
         modules: new Set<string>(),
         payload: {},
         pending: new Map(),
+        runtimeConfig: {public: {}},
         async awaitAll() {
             if (this.pending.size === 0) return
             await Promise.allSettled(this.pending.values())
@@ -560,12 +561,14 @@ describe('useAsyncData (deduplication)', () => {
             modules: new Set<string>(),
             payload: {},
             pending: new Map(),
+            runtimeConfig: {public: {}},
             async awaitAll() {
                 if (this.pending.size === 0) return
                 await Promise.allSettled(this.pending.values())
             },
         }
-        const veerApp = createVeerApp({
+
+        createVeerApp({
             vueApp: app,
             router: {} as any,
             config: {public: {}},
@@ -595,6 +598,7 @@ describe('useAsyncData (deduplication)', () => {
             modules: new Set<string>(),
             payload: {},
             pending: new Map(),
+            runtimeConfig: {public: {}},
             async awaitAll() {
                 if (this.pending.size === 0) return
                 await Promise.allSettled(this.pending.values())
