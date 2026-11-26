@@ -1,5 +1,41 @@
 # @devlusoft/veer
 
+## 0.3.0
+
+### Minor Changes
+
+- 0fa23b9: Stop auto-importing what lives in `app/features`. The composables in `app/features/*/composables` are no longer auto-imported and the components in `app/features` are no longer registered globally, so a feature can no longer use another feature's code without declaring it. Everything else is still imported automatically: `app/components`, `app/composables`, `shared/utils`, `shared/types` and `.veer/`.
+
+  To migrate, import what you use from its feature with the `@/` alias. A component used in a template without an import is no longer rendered and Vue warns that it can't resolve it, and a composable used without an import throws a reference error. Before:
+
+      <script setup lang="ts">
+      const {items} = useCarrito()
+      </script>
+      <template><ProductCard :id="1" /></template>
+
+  After:
+
+      <script setup lang="ts">
+      import ProductCard from '@/features/catalogo/components/ProductCard.vue'
+      import {useCarrito} from '@/features/carrito/composables/useCarrito'
+      const {items} = useCarrito()
+      </script>
+      <template><ProductCard :id="1" /></template>
+
+  This relies on the `@/` alias. If your project doesn't have the `@/*` path in its `tsconfig.json` yet, add it as described in the release notes of the `@/` alias.
+
+  After updating, delete the `.veer/` folder. veer generates `auto-imports.d.ts` and `components.d.ts` there and keeps the entries it had already written, so in an existing project the editor would keep accepting `useCarrito()` and `<ProductCard />` without an import until the folder is regenerated. The next dev or build run creates it again without anything from `app/features`.
+
+- 5ca8c65: Add the `@/` alias, which resolves to `app/` in dev, build and SSR, so a project can write `import ProductCard from '@/features/catalogo/components/ProductCard.vue'` instead of a relative path. Imports that start with `@` but not with `@/`, such as `@vue/...` or `@devlusoft/veer`, still resolve from `node_modules`. `#veer` and `#shared` are unchanged.
+
+  New projects from `create-veer` already include the `@/*` path in their `tsconfig.json`, and their `include` now covers the files inside `app/` instead of the project root. In an existing project, the editor needs the path added by hand in `compilerOptions.paths`, next to any entries you already have:
+
+      "paths": {
+        "@/*": ["./app/*"]
+      }
+
+  Also make sure the `include` of that `tsconfig.json` lists the files inside `app/` (for example `app/**/*.vue` and `app/**/*.ts`), or the editor will keep reporting type errors on `@/` imports.
+
 ## 0.2.2
 
 ### Patch Changes
