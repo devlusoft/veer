@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAuth } from '@/features/auth/composables/use-auth'
+
 const {user, login, logout} = useAuth()
 </script>
 

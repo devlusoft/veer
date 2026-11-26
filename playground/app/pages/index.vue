@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import HelloAuth from '@/features/auth/components/hello-auth.vue'
+
 const now = ref(new Date())
 const mounted = ref(false)
 
@@ -14,5 +16,5 @@ onMounted(() => {
   <p v-else>Current time: --</p>
   <Hello name="veer" />
   <FormsInput label="Test" />
-  <AuthHelloAuth />
+  <HelloAuth />
 </template>

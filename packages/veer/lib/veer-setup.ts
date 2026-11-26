@@ -118,11 +118,11 @@ export async function createVeerProjectSetup(cwd: string, config: ResolvedVeerCo
         {'@devlusoft/veer/runtime': ['useAsyncData', 'useFetch', '$fetch', 'createFetch']},
         {'@devlusoft/veer': ['definePage', 'defineVeerPlugin', 'defineVeerRouteMiddleware', 'abortNavigation', 'useHead', 'createError', 'showError', 'useError', 'clearError', 'useRuntimeConfig', 'useState', 'useCookie', 'useRequestEvent', 'useRequestHeaders', 'useRequestURL']},
       ],
-      dirs: ['app/composables', '.veer/composables', 'shared/utils', 'shared/types', 'app/features/*/composables'],
+      dirs: ['app/composables', '.veer/composables', 'shared/utils', 'shared/types'],
       dts: '.veer/auto-imports.d.ts',
     }),
     Components({
-      dirs: ['app/components', '.veer/components', 'app/features'],
+      dirs: ['app/components', '.veer/components'],
       globalNamespaces: ['components'],
       collapseSamePrefixes: true,
       resolvers: [
